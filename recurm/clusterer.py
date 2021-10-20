@@ -3,9 +3,6 @@ import errno
 import sys
 import logging
 import shutil
-import requests
-import json
-import gzip
 import subprocess
 import tempfile
 
