@@ -1,11 +1,7 @@
 import os
-import errno
 import sys
 import logging
 import shutil
-import requests
-import json
-import gzip
 import tempfile
 import networkx as nx
 
