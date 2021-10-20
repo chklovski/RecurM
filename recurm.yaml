@@ -11,6 +11,3 @@ dependencies:
   - scipy
   - prodigal>=2.6.3
   - networkx
-  - setuptools
-  - requests
-  - packaging
