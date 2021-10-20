@@ -1,0 +1,16 @@
+channels:
+  - conda-forge
+  - bioconda
+  - anaconda
+  - defaults
+dependencies:
+  - python>=3.6
+  - minimap2
+  - numpy
+  - pandas
+  - scipy
+  - prodigal>=2.6.3
+  - networkx
+  - setuptools
+  - requests
+  - packaging

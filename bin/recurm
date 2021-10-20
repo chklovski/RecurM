@@ -1,0 +1,148 @@
+#!/usr/bin/env python
+
+__author__ = "Alex Chklovski"
+__version__ = "0.0.1"
+__maintainer__ = "Alex Chklovski"
+__email__ = "chklovski near gmail.com"
+__status__ = "Development"
+
+import argparse
+from argparse import RawTextHelpFormatter
+import sys
+import logging
+import tempfile
+import pandas as pd
+import os
+
+sys.path = [os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')] + sys.path
+
+from recurm import clusterer
+from recurm import FASTA_manager
+from recurm import fileManager
+
+
+def generate_header():
+    header = "\t\t  _____                      __  __ \n " \
+             "\t\t |  __ \                    |  \/  |\n " \
+             "\t\t | |__) |___  ___ _   _ _ __| \  / |\n " \
+             "\t\t |  _  // _ \/ __| | | | '__| |\/| |\n " \
+             "\t\t | | \ \  __/ (__| |_| | |  | |  | |\n " \
+             "\t\t |_|  \_\___|\___|\__,_|_|  |_|  |_|\n "
+    return header
+
+
+if __name__ == '__main__':
+
+    num_threads = 1
+    min_contig_len = 2500
+
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument('--debug', help='output debug information', action="store_true")
+    parent_parser.add_argument('--version', help='output version information and quit', action='version',
+                               version=__version__)
+    parent_parser.add_argument('--quiet', help='only output errors', action="store_true")
+
+    parser = argparse.ArgumentParser(parents=[parent_parser])
+    subparsers = parser.add_subparsers(title="Sub-commands", dest='subparser_name',
+                                       parser_class=argparse.ArgumentParser)
+    subparser_name_to_parser = {}
+
+
+    def new_subparser(subparsers, parser_name, parser_description):
+        subpar = subparsers.add_parser(parser_name,
+                                       description=parser_description,
+                                       help=parser_description,
+                                       formatter_class=RawTextHelpFormatter,
+                                       parents=[parent_parser])
+        subparser_name_to_parser[parser_name] = subpar
+        return subpar
+
+
+    cluster_description = 'Cluster contigs from metagenome assemblies and identify putative MGEs.'
+
+    cluster_parser = new_subparser(subparsers, 'cluster', cluster_description)
+
+    cluster_arguments = cluster_parser.add_argument_group('required arguments')
+
+    cluster_parser.add_argument('--assemblies_directory', '-i',
+                                help="Path to folder containing all metagenomic assemblies to be analyzed",
+                                required=True)
+    cluster_parser.add_argument('--output', '--output-directory', '-o', help="Path output to folder",
+                                required=True)
+
+    cluster_arguments = cluster_parser.add_argument_group('additional arguments')
+
+    cluster_arguments.add_argument('-x', '--extension',
+                                   help='Extension of input files. [Default: .fasta]', default='.fasta')
+
+    cluster_arguments.add_argument('--force', action='store_true', help='overwrite output directory [default: do not overwrite]',
+                                   default=False)
+
+    cluster_arguments.add_argument('--threads', '-t', type=int, metavar='num_threads',
+                                   help='number of CPUS to use [default: %i]' % num_threads, default=num_threads)
+
+    cluster_arguments.add_argument('--min-contig-len', '--min_contig_len', '-m', type=int, metavar='min_contig_len',
+                                   help='Minimum contig length to consider for clustering [default: 2500]',
+                                   default=min_contig_len)
+
+    cluster_arguments.add_argument('-c', '--min_cluster_size', '--min-cluster-size',
+                                   help='Minimum size of putative cluster. [Default: 3]', default=3)
+
+
+    if (len(sys.argv) == 1 or sys.argv[1] == '-h' or sys.argv[1] == '--help' or sys.argv[1] == 'help'):
+        print('{}'.format(generate_header()))
+        print('                ...::: RecurM v' + __version__ + ' :::...''')
+        print('\n  General usage:')
+        print('    cluster         -> %s' % cluster_description)
+        #        print('    testrun         -> %s' % testrun_description)
+
+        print('\n  Use recurm <command> -h for command-specific help.\n')
+        sys.exit(0)
+
+    else:
+        args = parser.parse_args()
+
+    if args.debug:
+        loglevel = logging.DEBUG
+    elif args.quiet:
+        loglevel = logging.ERROR
+    else:
+        loglevel = logging.INFO
+
+    logging.basicConfig(level=loglevel, format='[%(asctime)s] %(levelname)s: %(message)s',
+                        datefmt='%m/%d/%Y %I:%M:%S %p')
+
+
+    # def validate_args_model_choice(args):
+    #     if (args.specific and args.general) or (args.specific and args.allmodels) or (args.general and args.allmodels):
+    #         logging.error("Only one of --general --specific --allmodels can be specified.")
+    #         sys.exit(1)
+    #     if args.specific:
+    #         return 'specific'
+    #     elif args.general:
+    #         return 'general'
+    #     if args.allmodels:
+    #         return 'both'
+    #     else:
+    #         return 'auto'
+
+    if args.subparser_name == 'cluster':
+        #        mode = validate_args_model_choice(args)
+
+        # TODO: Check if we got a list of files or a folder. For now assume a single folder with nothing but assemblies
+        assemblies_list = fileManager.list_assembly_folder(args.assemblies_directory, args.extension)
+        logging.info("Clustering contigs from {} assemblies with {} threads.".format(len(assemblies_list), args.threads))
+
+        clust_process = clusterer.Clusterer(args.min_contig_len, args.threads, assemblies_list,  args.output, args.extension, args.force)
+        clust_process.cluster_all_vs_all()
+#        clust_process.map_assemblies()
+
+
+
+
+        # predictor = predictQuality.Predictor(args.genome_fasta_directory, args.output_directory, args.extension,
+        #                                      args.threads, args.force, args.lowmem)
+        # predictor.prediction_wf(args.genes, mode, args.dbg_cos, args.dbg_vectors, args.stdout)
+
+    else:
+        raise Exception("Programming error")
