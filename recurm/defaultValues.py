@@ -9,7 +9,7 @@ class DefaultValues():
     SECOND_PASS_NAME = 'initial_subfilter'
     CIRCULAR_ALIGNMENTS_NAME = 'circular_alignments'
 
-    DEFAULT_FASTA_HEADER_SEPARATOR = '__'
+    DEFAULT_FASTA_HEADER_SEPARATOR = '@'
 
     FIRST_PASS_AVA_LR_CUTOFF = 0.9
     FIRST_PASS_AVA_AR_CUTOFF = 0.9

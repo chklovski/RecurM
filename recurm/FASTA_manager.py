@@ -1,8 +1,8 @@
 import os
+import pandas as pd
 import sys
 import logging
 import shutil
-import tempfile
 import networkx as nx
 
 from recurm import fileManager
@@ -54,24 +54,46 @@ def setup_and_format_assemblies(min_len, inputfilelist, outputfolder):
 
 def write_clusters_to_file(initial_concat_assembly, outdir, graphs, infos):
     records = {}
+    master_records = {}
     fileManager.make_sure_path_exists(os.path.join(outdir, 'clusters'))
+    other_contigs_in_cluster = {}
     for i, subgraph in enumerate(graphs):
         dcent = nx.degree_centrality(subgraph)
         best_degree_centrality = {k: dcent[k] for k in subgraph}
         final_selected_contig = max(best_degree_centrality, key=best_degree_centrality.get)
-        #records.append((i, final_selected_contig))
         records[str(final_selected_contig)] = i
+
+        for name in dcent.keys():
+            master_records[name] = i
+
 
     infos_size = dict(zip(infos['ID'], infos['Average_Bp_Size']))
     structure = dict(zip(infos['ID'], infos['Structure']))
 
-    nucleotide_sequences = {}
+
     for name, seq, _ in readfq(open(initial_concat_assembly)):
         if str(name) in records.keys():
             ID = records[name]
 
             destination = '{}/clusters/{}_cluster_ID_{}_Size_{}.fna'.format(outdir, structure[ID], ID, infos_size[ID])
+            name = name.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[-1]
             write_fasta({name: seq}, destination)
+        else:
+            if name not in master_records.keys():
+                master_records[name] = 'Not_in_cluster'
+
+        # restore original contig
+    df = pd.DataFrame(data=master_records.items(), columns=['ContigName', 'Cluster_ID'])
+
+    df['Sample'] = df['ContigName'].apply(lambda x: x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0])
+    df['Size'] = df['ContigName'].apply(lambda x: x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[1])
+    df['ContigName'] = df['ContigName'].apply(lambda x: x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[2])
+
+    df[df['Cluster_ID'] == 'Not_in_cluster'].to_csv('{}/leftover_contigs_information.tsv'.format(outdir), sep='\t', index=False)
+    df[df['Cluster_ID'] != 'Not_in_cluster'].to_csv('{}/cluster_contigs_information.tsv'.format(outdir), sep='\t', index=False)
+
+
+
 
 
 def readfq(fp):  # this is a generator function

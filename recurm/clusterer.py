@@ -70,14 +70,15 @@ class Clusterer():
         cluster_information, sub_graphs = graph_process.retrieve_disconnected_subgraphs(master_graph, DefaultValues.MIN_CLUSTER_SIZE, alignments_file)
 
         logging.info('Writing summary information to file: {}/cluster_information.tsv'.format(self.outdir))
+
         cluster_information.to_csv('{}/cluster_information.tsv'.format(self.outdir), sep='\t', index=False)
 
         logging.info('Extracting representative contigs.')
         FASTA_manager.write_clusters_to_file(combined_assemblies, self.outdir, sub_graphs,cluster_information)
 
         logging.info('Cleaning up intermediate files.')
-        fileManager.remove_intermediates([combined_assemblies,
-                                          hashfile,
+        fileManager.remove_intermediates([hashfile,
+                                          combined_assemblies,
                                           filteredfile,
                                           paf_first_out,
                                           '{}/{}.passed'.format(self.outdir, DefaultValues.CIRCULAR_ALIGNMENTS_NAME),
