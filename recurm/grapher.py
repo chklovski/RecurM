@@ -45,6 +45,7 @@ class ClusterGraph():
             if len(valid_subgroups) == 0:  # either a small cluster or a very weakly linked one.
                 pruned_graphs.append(subgraph)
             else:
+                nodes_to_remove = list(subgraph)
                 # select the biggest graph resulting from pruning operation
                 for group_id, entry in enumerate(valid_subgroups):
                     allcontigs = valid_subgroups[group_id]
@@ -56,7 +57,13 @@ class ClusterGraph():
 
                 max_key = max(len_dict, key=len_dict.get)
                 selected_cluster = valid_subgroups[max_key]
-                pruned_graphs.append(selected_cluster)
+
+                #remove nodes cast aside
+                for element in selected_cluster:
+                    nodes_to_remove.remove(element)
+
+                nx.Graph(subgraph).remove_nodes_from(nodes_to_remove)
+                pruned_graphs.append(subgraph)
 
         return pruned_graphs
 
@@ -90,6 +97,7 @@ class ClusterGraph():
         # also make sure we're not walking through the same sample more than once per cluster
         final_nodes = []
         final_subgraphs = []
+
 
         for idx, entry in enumerate(list(sub_graphs)):
             sample_list = []
@@ -176,7 +184,6 @@ class ClusterGraph():
                              len(infos[infos['Structure'] == 'Imperfect'])))
 
         return infos, final_subgraphs
-
 
 
 
