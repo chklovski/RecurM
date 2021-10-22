@@ -62,8 +62,11 @@ class ClusterGraph():
                 for element in selected_cluster:
                     nodes_to_remove.remove(element)
 
-                nx.Graph(subgraph).remove_nodes_from(nodes_to_remove)
-                pruned_graphs.append(subgraph)
+
+                unfrozen_subgraph = nx.Graph(subgraph)
+                unfrozen_subgraph.remove_nodes_from(nodes_to_remove)
+                pruned_graphs.append(unfrozen_subgraph)
+
 
         return pruned_graphs
 
@@ -184,6 +187,7 @@ class ClusterGraph():
                              len(infos[infos['Structure'] == 'Imperfect'])))
 
         return infos, final_subgraphs
+
 
 
 
