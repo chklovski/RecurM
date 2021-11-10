@@ -254,7 +254,8 @@ class AllVsAllMapper(Mapper):
                     if overlap1 < 10 and overlap2 < 10:
                           if not firstHalfA and firstHalfB:
                                 real_circs.append(subsub)
-                                print(subsub)
+                          elif firstHalfA and not firstHalfB:
+                                real_circs.append(subsub)
 
             index += 2
             
