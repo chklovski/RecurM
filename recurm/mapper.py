@@ -4,8 +4,12 @@ import subprocess
 import os
 import pandas as pd
 import numpy as np
+import hashlib
 
-PYTHONHASHSEED=0
+
+Hash = hashlib.sha512
+MAX_HASH_PLUS_ONE = 2**(Hash().digest_size * 8)
+
 
 from recurm.defaultValues import DefaultValues
 
@@ -31,7 +35,15 @@ class Mapper():
             return 'DifferentSample'
 
     def hashsum(self, a, b):
-        return hash(a) + hash(b)
+        return self.str_to_probability(a) * self.str_to_probability(b)
+    
+    def str_to_probability(self, in_str):
+        """Return a reproducible uniformly random float in the interval [0, 1) for the given string."""
+        seed = in_str.encode()
+        hash_digest = Hash(seed).digest()
+        hash_int = int.from_bytes(hash_digest, 'big')  # Uses explicit byteorder for system-agnostic reproducibility
+        return hash_int / MAX_HASH_PLUS_ONE  # Float division
+
 
     def calcLR(self, lenx, leny, alin_len, mismatch):
         if lenx > leny:
@@ -91,10 +103,10 @@ class AllVsAllMapper(Mapper):
 
 
     def mapAVA(self, combined_assemblies, outdir):
-        mapping_output = '{}/{}'.format(outdir, DefaultValues.FIRST_PASS_MAPPING_NAME)
+        mapping_output = '{}/{}'.format(outdir, DefaultValues.FIRST_PASS_MAPPING_NAME)# --dual=yes
         mapping_input = combined_assemblies
         try:
-            cmd = "minimap2 -x ava-ont -t {} {} {} --dual=yes -v1 > {}"\
+            cmd = "minimap2 -x ava-ont -t {} {} {} -v1 > {}" \
                 .format(self.nthreads, mapping_input, mapping_input, mapping_output)
 
             logging.debug(cmd)
@@ -190,50 +202,62 @@ class AllVsAllMapper(Mapper):
 
         while index < len(extracted_aligns):
 
-            subsub = extracted_aligns.iloc[index:index + 2, :]
+            subsub = extracted_aligns.iloc[index:index + 2, :] #We've pre-filtered to 2 alignments only
 
             if subsub['AR'].values[0] + subsub['AR'].values[1] > ARcutoff:
                 # direction is conserved between alignments, ie. no palindromic alignments
-                if len(subsub[5].unique()) == 1:
 
-                    astart = subsub[3].values[0]
-                    aend = subsub[4].values[0]
-                    bstart = subsub[8].values[0]
-                    bend = subsub[9].values[0]
-                    lena = subsub[2].values[0]
-                    lenb = subsub[7].values[0]
+                astart = subsub[3].values[0]
+                aend = subsub[4].values[0]
+                bstart = subsub[8].values[0]
+                bend = subsub[9].values[0]
+                lena = subsub[2].values[0]
+                lenb = subsub[7].values[0]
 
-                    astart2 = subsub[3].values[1]
-                    aend2 = subsub[4].values[1]
-                    bstart2 = subsub[8].values[1]
-                    bend2 = subsub[9].values[1]
+                astart2 = subsub[3].values[1]
+                aend2 = subsub[4].values[1]
+                bstart2 = subsub[8].values[1]
+                bend2 = subsub[9].values[1]
 
-                    if (lena - aend) > (lena - aend2):
-                        firstHalfA = True
-                    else:
-                        firstHalfA = False
+                if (lena - aend) > (lena - aend2):
+                    firstHalfA = True
+                else:
+                    firstHalfA = False
 
-                    if (lenb - bend) > (lenb - bend2):
-                        firstHalfB = True
-                    else:
-                        firstHalfB = False
+                if (lenb - bend) > (lenb - bend2):
+                    firstHalfB = True
+                else:
+                    firstHalfB = False
 
-                    overlap1 = self.overlap_percent(astart, aend, astart2, aend2)
-                    overlap2 = self.overlap_percent(bstart, bend, bstart2, bend2)
+                overlap1 = self.overlap_percent(astart, aend, astart2, aend2)
+                overlap2 = self.overlap_percent(bstart, bend, bstart2, bend2)
 
-                    #no more than 10% overlap:
-                    #TODO: check this aligns with AR to match cutoffs
+                if len(subsub[5].unique()) == 1: # This means + to + or - to -
+                #no more than 10% overlap:
+                #TODO: check this aligns with AR to match cutoffs
                     if overlap1 < 10 and overlap2 < 10:
-
+    
                         if subsub[5].values[0] == '-':
                             if firstHalfA and firstHalfB:
                                 real_circs.append(subsub)
-
+                            elif not firstHalfA and not firstHalfB:
+                                real_circs.append(subsub)
+                            
+    
                         elif subsub[5].values[0] == '+':
                             if not firstHalfA and firstHalfB:
                                 real_circs.append(subsub)
+                            elif firstHalfA and not firstHalfB:
+                                real_circs.append(subsub)
+                                
+                elif len(subsub[5].unique()) == 2: # This means + to -
+                    if overlap1 < 10 and overlap2 < 10:
+                          if not firstHalfA and firstHalfB:
+                                real_circs.append(subsub)
+                                print(subsub)
 
             index += 2
+            
         result = pd.concat(real_circs)
         result = result[result['ANI'] > ANIcutoff]
 
@@ -277,29 +301,32 @@ class AllVsAllMapper(Mapper):
         index = 0
 
         for chunk in df:
+        
             chunk['AR'] = chunk.apply(lambda row: self.calcAR(row[2], row[7], row[11], row[10]), axis=1)
             chunk['LR'] = chunk.apply(lambda row: self.calcLR(row[2], row[7], row[11], row[10]), axis=1)
             chunk['ANI'] = chunk.apply(lambda row: self.calcANI(row[2], row[7], row[11], row[10]), axis=1)
             chunk['Sample'] = chunk.apply(lambda row: self.samplify(row[1], row[6]), axis=1)
 
             chunk = chunk[chunk['Sample'] == 'DifferentSample']
-
-            chunk['Hash'] = chunk.apply(lambda row: self.hashsum(row[1], row[6]), axis=1)
-
-            #multiple alignments need at least ~20% length coverage on a side to be a decent match
-            chunk2 = chunk[chunk['AR'] > 0.2]
-
-
-            chunk2.iloc[:, -1].to_csv('{}/{}.hashes'.format(outdir, outfile), mode='a', sep='\t', header=False)
-            del chunk['Hash']
-            del chunk['Sample']
-            del chunk2
-
-            chunk = chunk[chunk['AR'] > ARcutoff]
-            chunk = chunk[chunk['LR'] > LRcutoff]
-            chunk = chunk[chunk['ANI'] > ANIcutoff]
-
-            chunk[[1,2,3,4,5,6,7,8,9,10,11,'AR','LR','ANI']].to_csv('{}/{}.passed'.format(outdir, outfile), mode='a', sep='\t', header=False)
+            
+            if len(chunk) > 1:
+    
+                chunk['Hash'] = chunk.apply(lambda row: self.hashsum(row[1], row[6]), axis=1)
+    
+                #multiple alignments need at least ~20% length coverage on a side to be a decent match
+                chunk2 = chunk[chunk['AR'] > 0.2]
+    
+    
+                chunk2.iloc[:, -1].to_csv('{}/{}.hashes'.format(outdir, outfile), mode='a', sep='\t', header=False)
+                del chunk['Hash']
+                del chunk['Sample']
+                del chunk2
+    
+                chunk = chunk[chunk['AR'] > ARcutoff]
+                chunk = chunk[chunk['LR'] > LRcutoff]
+                chunk = chunk[chunk['ANI'] > ANIcutoff]
+    
+                chunk[[1,2,3,4,5,6,7,8,9,10,11,'AR','LR','ANI']].to_csv('{}/{}.passed'.format(outdir, outfile), mode='a', sep='\t', header=False)
 
             index += chunksize
 
