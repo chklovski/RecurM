@@ -259,16 +259,21 @@ class AllVsAllMapper(Mapper):
 
             index += 2
             
-        result = pd.concat(real_circs)
-        result = result[result['ANI'] > ANIcutoff]
-
-        result.reset_index(drop=True, inplace=True)
-        del result['HashCount']
-        del result['Sample']
-        del result['Hash']
-
-        logging.info('Writing circular alignments to file.')
-        result.to_csv(outfile, sep='\t', index=False, header=False)
+        if(len(real_circs)) > 1:
+            result = pd.concat(real_circs)
+            result = result[result['ANI'] > ANIcutoff]
+    
+            result.reset_index(drop=True, inplace=True)
+            del result['HashCount']
+            del result['Sample']
+            del result['Hash']
+    
+            logging.info('Writing circular alignments to file.')
+            result.to_csv(outfile, sep='\t', index=False, header=False)
+            
+            return True
+        else:
+            return False
 
 
 
