@@ -70,15 +70,17 @@ class ClusterGraph():
 
         return pruned_graphs
 
-    def create_graph_from_alignments(self, circular_alignments, linear_alignments):
-        circs = pd.read_csv(circular_alignments, sep='\t', names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 'AR', 'LR', 'ANI'])
-        linears = pd.read_csv(linear_alignments, sep='\t', names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 'AR', 'LR', 'ANI'])
-
-        circs['Circularity'] = 'Circular'
+    def create_graph_from_alignments(self, circular_alignments, linear_alignments, circular_success):
+        
+        linears = pd.read_csv(linear_alignments, sep='\t', names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 'AR', 'LR', 'ANI'])       
         linears['Circularity'] = 'Imperfect'
-
-        all_alignments = pd.concat([circs, linears])
-
+        
+        if circular_success:
+            circs = pd.read_csv(circular_alignments, sep='\t', names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 'AR', 'LR', 'ANI'])
+            circs['Circularity'] = 'Circular'
+            all_alignments = pd.concat([circs, linears])
+        else:
+            all_alignments = linears
 
         all_alignments['Circularity'] = all_alignments.apply(lambda row: self.identify_perfect_edge_alignment(row[2], row[7], row[3], row[4], row[8], row[9], row['Circularity']), axis=1)
         all_alignments['Distance'] = all_alignments['LR'] * all_alignments['AR'] * all_alignments['ANI']
@@ -171,7 +173,7 @@ class ClusterGraph():
             df = pd.DataFrame(data=cluster_summary, index=[0])
             list_of_cluster_summaries.append(df)
             id_dict[idx] = entry
-            print(idx, end='\r')
+
         infos = pd.concat(list_of_cluster_summaries)
         infos.reset_index(drop=True, inplace=True)
 
