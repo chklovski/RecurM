@@ -55,7 +55,7 @@ class Clusterer():
             sys.exit(1)
         logging.info('Identifying multiple alignments from hashes and extracting mappings.')
         hashes_extracted_file = AVA_mapper.extract_hashes_with_multiple_hits(hashfile)
-        AVA_mapper.read_hashes_and_process_alignments(hashfile,
+        circular_success = AVA_mapper.read_hashes_and_process_alignments(hashfile,
                                                       paf_first_out,
                                                       DefaultValues.FIRST_PASS_AVA_LR_CUTOFF,
                                                       DefaultValues.FIRST_PASS_AVA_AR_CUTOFF,
@@ -65,7 +65,7 @@ class Clusterer():
         logging.info('Drawing master graph from contig alignments.')
         graph_process = grapher.ClusterGraph(self.nthreads)
         master_graph, alignments_file = graph_process.create_graph_from_alignments('{}/{}.passed'.format(self.outdir, DefaultValues.CIRCULAR_ALIGNMENTS_NAME),
-                                                                  '{}/{}.passed'.format(self.outdir, DefaultValues.SECOND_PASS_NAME))
+                                                                  '{}/{}.passed'.format(self.outdir, DefaultValues.SECOND_PASS_NAME), circular_success)
         logging.info('Extracting disconnected subgraphs.')
         cluster_information, sub_graphs = graph_process.retrieve_disconnected_subgraphs(master_graph, DefaultValues.MIN_CLUSTER_SIZE, alignments_file)
 
