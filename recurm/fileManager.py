@@ -4,6 +4,7 @@ import sys
 import logging
 import shutil
 import tempfile
+import subprocess
 
 def remove_intermediates(list_of_files):
     for entry in list_of_files:
@@ -27,6 +28,22 @@ def list_assembly_folder(assembly_folder, ext):
 
     return sorted(assembly_files)
 
+def bash_sort_file(file, column_loc, outdir, threads, numerical):
+    if not numerical:
+        numerical = ''
+    else:
+        numerical = 'n'
+    try:
+        sortedfile = '{}/TMP.hashes'.format(outdir)
+        cmd = "sort -t$'\\t' -k{} --parallel {} -{}r {} > {} && mv {} {}" \
+            .format(column_loc, threads, numerical, file, sortedfile, sortedfile, file)
+
+        logging.debug(cmd)
+        subprocess.call(cmd, shell=True)
+        logging.debug('Finished sorting')
+    except Exception as e:
+        logging.error('An error occured while sorting file {}: {}'.format(file, e))
+        sys.exit(1)
 
 def check_empty_dir(input_dir, overwrite=False):
     """Check the the specified directory is empty and create it if necessary."""

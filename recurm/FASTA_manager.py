@@ -12,7 +12,7 @@ from recurm.defaultValues import DefaultValues
 def setup_and_format_assemblies(min_len, inputfilelist, outputfolder):
     fileManager.make_sure_path_exists(outputfolder)
     master_assembly_file = '{}/{}'.format(outputfolder, DefaultValues.COMBINED_ASSEMBLY_NAME)
-    nucleotide_sequences = {}
+#    nucleotide_sequences = {}
     processed_headers = {}
     processed = 0
 
@@ -55,8 +55,9 @@ def setup_and_format_assemblies(min_len, inputfilelist, outputfolder):
 def write_clusters_to_file(initial_concat_assembly, outdir, graphs, infos):
     records = {}
     master_records = {}
-    fileManager.make_sure_path_exists(os.path.join(outdir, 'clusters'))
-    other_contigs_in_cluster = {}
+    cluster_out_folder = os.path.join(outdir, 'clusters')
+    fileManager.make_sure_path_exists(cluster_out_folder)
+#    other_contigs_in_cluster = {}
     for i, subgraph in enumerate(graphs):
         dcent = nx.degree_centrality(subgraph)
         best_degree_centrality = {k: dcent[k] for k in subgraph}
@@ -89,9 +90,10 @@ def write_clusters_to_file(initial_concat_assembly, outdir, graphs, infos):
     df['Size'] = df['ContigName'].apply(lambda x: x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[1])
     df['ContigName'] = df['ContigName'].apply(lambda x: x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[2])
 
-    df[df['Cluster_ID'] == 'Not_in_cluster'].to_csv('{}/leftover_contigs_information.tsv'.format(outdir), sep='\t', index=False)
-    df[df['Cluster_ID'] != 'Not_in_cluster'].to_csv('{}/cluster_contigs_information.tsv'.format(outdir), sep='\t', index=False)
+    cluster_contigs_info = df[df['Cluster_ID'] != 'Not_in_cluster']
+    leftover_contigs_info = df[df['Cluster_ID'] == 'Not_in_cluster']
 
+    return cluster_out_folder, cluster_contigs_info, leftover_contigs_info
 
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 __author__ = "Alex Chklovski"
-__version__ = "0.0.1"
+__version__ = "0.1.1"
 __maintainer__ = "Alex Chklovski"
 __email__ = "chklovski near gmail.com"
 __status__ = "Development"
@@ -88,6 +88,9 @@ if __name__ == '__main__':
     cluster_arguments.add_argument('-c', '--min_cluster_size', '--min-cluster-size',
                                    help='Minimum size of putative cluster. [Default: 3]', default=3)
 
+    cluster_arguments.add_argument('--resume', action='store_true',
+                                   help='Continue from a previous RecurM run to skip steps already done.', default=False)
+
 
     if (len(sys.argv) == 1 or sys.argv[1] == '-h' or sys.argv[1] == '--help' or sys.argv[1] == 'help'):
         print('{}'.format(generate_header()))
@@ -113,19 +116,6 @@ if __name__ == '__main__':
                         datefmt='%m/%d/%Y %I:%M:%S %p')
 
 
-    # def validate_args_model_choice(args):
-    #     if (args.specific and args.general) or (args.specific and args.allmodels) or (args.general and args.allmodels):
-    #         logging.error("Only one of --general --specific --allmodels can be specified.")
-    #         sys.exit(1)
-    #     if args.specific:
-    #         return 'specific'
-    #     elif args.general:
-    #         return 'general'
-    #     if args.allmodels:
-    #         return 'both'
-    #     else:
-    #         return 'auto'
-
     if args.subparser_name == 'cluster':
         #        mode = validate_args_model_choice(args)
 
@@ -133,16 +123,13 @@ if __name__ == '__main__':
         assemblies_list = fileManager.list_assembly_folder(args.assemblies_directory, args.extension)
         logging.info("Clustering contigs from {} assemblies with {} threads.".format(len(assemblies_list), args.threads))
 
-        clust_process = clusterer.Clusterer(args.min_contig_len, args.threads, assemblies_list,  args.output, args.extension, args.force)
+        clust_process = clusterer.Clusterer(args.min_contig_len, args.threads, assemblies_list,  args.output, args.extension, args.force, args.resume)
         clust_process.cluster_all_vs_all()
 #        clust_process.map_assemblies()
 
 
 
 
-        # predictor = predictQuality.Predictor(args.genome_fasta_directory, args.output_directory, args.extension,
-        #                                      args.threads, args.force, args.lowmem)
-        # predictor.prediction_wf(args.genes, mode, args.dbg_cos, args.dbg_vectors, args.stdout)
 
     else:
         raise Exception("Programming error")

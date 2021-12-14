@@ -21,9 +21,21 @@ class ClusterGraph():
         return circularity
 
     def assign_cluster_label(self, row):
+        total_aligns = (row['Imperfect_Count'] + row['Linear_Count']) / 2 #don't care about circulars as they're not relevant
+        if total_aligns < 10: #less than 10 contigs
+            if total_aligns > 4:
+                min_linear_needed = total_aligns - 1
+            else:
+                min_linear_needed = total_aligns
+        else:
+            min_linear_needed = 0.9 * total_aligns
         if row['Circular_Count'] > 0:
             return 'Circular'
         elif row['Imperfect_Count'] == 0:
+            return 'Linear'
+        #allow some leniency in labelling linear clusters - if count is at least 4, and > 90% (or n-1) are linear, it should be linear
+        #TODO: ensure the rest are shorter
+        elif (row['Linear_Count']/2) > min_linear_needed:
             return 'Linear'
         else:
             return 'Imperfect'
@@ -32,6 +44,8 @@ class ClusterGraph():
         logging.info('Pruning complex graphs.')
 
         pruned_graphs = []
+
+        pruned_count = 0
         for subgraph in graph:
 
             valid_subgroups = []
@@ -45,6 +59,8 @@ class ClusterGraph():
             if len(valid_subgroups) == 0:  # either a small cluster or a very weakly linked one.
                 pruned_graphs.append(subgraph)
             else:
+                if len(valid_subgroups) > 1:
+                    pruned_count += 1
                 nodes_to_remove = list(subgraph)
                 # select the biggest graph resulting from pruning operation
                 for group_id, entry in enumerate(valid_subgroups):
@@ -67,7 +83,7 @@ class ClusterGraph():
                 unfrozen_subgraph.remove_nodes_from(nodes_to_remove)
                 pruned_graphs.append(unfrozen_subgraph)
 
-
+        logging.info('Pruned {} graphs.'.format(pruned_count))
         return pruned_graphs
 
     def create_graph_from_alignments(self, circular_alignments, linear_alignments, circular_success):
@@ -93,7 +109,7 @@ class ClusterGraph():
 
         return G, all_alignments
 
-    def retrieve_disconnected_subgraphs(self, graph, min_cluster_size, all_alignments):
+    def retrieve_disconnected_subgraphs(self, graph, min_cluster_size, all_alignments, outdir):
         initial_subgraphs = (list(graph.subgraph(c) for c in nx.connected_components(graph)))
 
         sub_graphs = self.prune_graph(initial_subgraphs, min_cluster_size)
@@ -118,10 +134,11 @@ class ClusterGraph():
         final_nodes = [list(x) for x in final_nodes]
         if len(final_nodes) == 0:
             logging.warning('No valid clusters found. Check that your --min_contig_length and --min_cluster_size are reasonable.')
-            #Probably remove all the intermediate stuff at this point
+            #TODO: Probably remove all the intermediate stuff at this point
             sys.exit(0)
 
         # construct an overview table of results
+        nx.write_gpickle(final_nodes, '{}/{}'.format(outdir, DefaultValues.GRAPH_PICKLE_NAME), protocol=4)
 
         all_alignments['Key'] = all_alignments[1] + all_alignments[6]
         all_alignments['Key2'] = all_alignments[6] + all_alignments[1]
@@ -129,6 +146,7 @@ class ClusterGraph():
         circ_dict = dict(zip(all_alignments['Key'], all_alignments['Circularity']))
         circ_dict2 = dict(zip(all_alignments['Key2'], all_alignments['Circularity']))
         circ_dict = {**circ_dict, **circ_dict2}
+
 
 
         list_of_cluster_summaries = []
@@ -180,13 +198,15 @@ class ClusterGraph():
         #assign label
         infos['Structure'] = infos.apply(lambda row: self.assign_cluster_label(row), axis=1)
         infos['Average_Bp_Size'] = infos['Average_Bp_Size'].astype(int)
-
-
+        logging.info('')
+        logging.info('********************************************* RESULTS: *********************************************')
         logging.info('Identified a total of {} clusters. Of these, {} are circular, {} are linear and {} are imperfect.'
                      .format(len(infos),
                              len(infos[infos['Structure'] == 'Circular']),
                              len(infos[infos['Structure'] == 'Linear']),
                              len(infos[infos['Structure'] == 'Imperfect'])))
+        logging.info('****************************************************************************************************')
+        logging.info('')
 
         return infos, final_subgraphs
 
