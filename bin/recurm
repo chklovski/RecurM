@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 __author__ = "Alex Chklovski"
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __maintainer__ = "Alex Chklovski"
 __email__ = "chklovski near gmail.com"
 __status__ = "Development"
@@ -90,6 +90,9 @@ if __name__ == '__main__':
 
     cluster_arguments.add_argument('--resume', action='store_true',
                                    help='Continue from a previous RecurM run to skip steps already done.', default=False)
+                                   
+    cluster_arguments.add_argument('--nocollapse', action='store_true',
+                                   help='Do not collapse highly related short clusters into long clusters at the end - keep all clusters [default: collapse]', default=False)
 
 
     if (len(sys.argv) == 1 or sys.argv[1] == '-h' or sys.argv[1] == '--help' or sys.argv[1] == 'help'):
@@ -123,7 +126,7 @@ if __name__ == '__main__':
         assemblies_list = fileManager.list_assembly_folder(args.assemblies_directory, args.extension)
         logging.info("Clustering contigs from {} assemblies with {} threads.".format(len(assemblies_list), args.threads))
 
-        clust_process = clusterer.Clusterer(args.min_contig_len, args.threads, assemblies_list,  args.output, args.extension, args.force, args.resume)
+        clust_process = clusterer.Clusterer(args.min_contig_len, args.threads, assemblies_list,  args.output, args.extension, args.force, args.resume, args.nocollapse)
         clust_process.cluster_all_vs_all()
 #        clust_process.map_assemblies()
 

@@ -16,9 +16,10 @@ from recurm import grapher
 
 
 class Clusterer():
-    def __init__(self, mincontiglen, threads, assemblies_list, out, filext, overwrite=False, resume=False):
+    def __init__(self, mincontiglen, threads, assemblies_list, out, filext, overwrite=False, resume=False, nocollapse=False):
         self.nthreads = threads
         self.input_list = assemblies_list
+        self.nocollapse = nocollapse
         if not resume:
             fileManager.check_empty_dir(os.path.abspath(out), overwrite)
             self.outdir = os.path.abspath(out)
@@ -141,7 +142,7 @@ class Clusterer():
                                                       DefaultValues.FIRST_PASS_AVA_AR_CUTOFF,
                                                       DefaultValues.FIRST_PASS_AVA_ANI_CUTOFF,
                                                       self.outdir,
-                                                      cluster_information, cluster_contigs_info, leftover_contigs_info)
+                                                      cluster_information, cluster_contigs_info, leftover_contigs_info, self.nocollapse)
 
         logging.info('Writing summary information to file: {}/cluster_information.tsv'.format(self.results_dir))
 

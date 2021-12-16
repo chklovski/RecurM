@@ -16,7 +16,7 @@ class ClusterGraph():
             if (alen * 0.99) < blen < (alen * 1.01):  # if within 1% of each other
                 if astart < (bstart + 1):
                     if aend > (bend - 1):
-                        return 'Perfect'
+                        return 'Linear'
 
         return circularity
 

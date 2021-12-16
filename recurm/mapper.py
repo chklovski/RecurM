@@ -657,7 +657,7 @@ class WithinClusterMapper(Mapper):
 
     def collapse_related_clusters(self, mapping_file, cluster_folder,
                                   LRcutoff, ARcutoff, ANIcutoff, outdir,
-                                  cluster_information, cluster_contigs_info, leftover_contigs_info):
+                                  cluster_information, cluster_contigs_info, leftover_contigs_info, nocollapse):
         paf = pd.read_csv(mapping_file,
                              names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], sep='\t')
 
@@ -671,83 +671,84 @@ class WithinClusterMapper(Mapper):
 
         collapsee = []
 
-        if len(paf[paf['ARshort'] > ARcutoff]) > 0:
-
-            sel = paf[paf['ARshort'] > ARcutoff].copy()
-            sel = sel[sel['ANI'] > ANIcutoff]
-
-
-            #collapsee = []
-            collapsed_into = []
-            direction = []
-
-            if len(sel) > 0:
-                logging.info('Collapsing related clusters.')
-                #indexes_for_collapse = sel.index.values
-
-                #sel = sel.sort_values(by=2, ascending=True)
-                #sel = sel.sort_values(by=7, ascending=True)
-
-                #collapse shorter cluster into longer cluster
-                sel.reset_index(drop=True, inplace=True)
-
-                for index, row in sel.iterrows():
-                    if sel.at[index, 2] > sel.at[index, 7]:
-                        # first element is longer
-                        longer = sel.at[index, 1]
-                        shorter = sel.at[index, 6]
-                    else:
-                        shorter = sel.at[index, 1]
-                        longer = sel.at[index, 6]
-
-                    shorter = shorter.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0]
-                    longer = longer.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0]
-
-
-                    collapsee.append(shorter)
-                    collapsed_into.append(longer)
-                    direction.append('-->')
-
-                    #move_from = os.path.join(cluster_folder, longer + '.fna')
-                    #move_to = os.path.join(cluster_folder, shorter + '.fna')
-
-                    logging.debug('Collapsing {} --> {}'.format(shorter, longer))
-
-                    try:
-                        os.remove(os.path.join(cluster_folder, shorter + '.fna'))
-                    except FileNotFoundError:
-                        if shorter in collapsee:
-                            continue
+        if not nocollapse:
+            if len(paf[paf['ARshort'] > ARcutoff]) > 0:
+    
+                sel = paf[paf['ARshort'] > ARcutoff].copy()
+                sel = sel[sel['ANI'] > ANIcutoff]
+    
+    
+                #collapsee = []
+                collapsed_into = []
+                direction = []
+    
+                if len(sel) > 0:
+                    logging.info('Collapsing related clusters.')
+                    #indexes_for_collapse = sel.index.values
+    
+                    #sel = sel.sort_values(by=2, ascending=True)
+                    #sel = sel.sort_values(by=7, ascending=True)
+    
+                    #collapse shorter cluster into longer cluster
+                    sel.reset_index(drop=True, inplace=True)
+    
+                    for index, row in sel.iterrows():
+                        if sel.at[index, 2] > sel.at[index, 7]:
+                            # first element is longer
+                            longer = sel.at[index, 1]
+                            shorter = sel.at[index, 6]
                         else:
-                            logging.error('File not found: {}. Unable to continue.'.format(os.path.join(cluster_folder, shorter + '.fna')))
-                            sys.exit(1)
-
-
-                collapsed_log = pd.DataFrame({'Collapsee': collapsee, 'Direction': direction, 'Collapsed_Into': collapsed_into})
-                collapsed_log_file = os.path.join(outdir, DefaultValues.COLLAPSED_LOG_FILE)
-                collapsed_log.to_csv(collapsed_log_file, sep='\t', index=False, header=False)
-
-                logging.info('Found and collapsed {} related clusters.'.format(len(set(collapsee))))
-
-                #update cluster information
-                remove_ids = [int(x.split('ID_')[-1].split('_')[0]) for x in collapsee]
-                new_ids = [int(x.split('ID_')[-1].split('_')[0]) for x in collapsed_into]
-
-                re_id = dict(zip(remove_ids, new_ids))
-
-                cluster_contigs_info['Cluster_ID']  = cluster_contigs_info['Cluster_ID'].\
-                    apply(lambda x: 'Collapsed into {}'.format(re_id[int(x)]) if int(x) in re_id.keys() else x)
-                cluster_information = cluster_information[~cluster_information['ID'].isin(remove_ids)]
-
-                #append_to_leftovercontigs = cluster_contigs_info[cluster_contigs_info['Cluster_ID'].isin(remove_ids)].copy()
-                #cluster_contigs_info = cluster_contigs_info[~cluster_contigs_info['Cluster_ID'].isin(remove_ids)]
-                #append_to_leftovercontigs['Cluster_ID'] = new_ids
-                #cluster_contigs_info = pd.concat([cluster_contigs_info, append_to_leftovercontigs])
-
-
-            # elif len(paf[paf['ARshort'] > ARcutoff]) != len(sel):
-                # Is there a difference between mapping well with low ANI and mapping decently with low ANI?
-
+                            shorter = sel.at[index, 1]
+                            longer = sel.at[index, 6]
+    
+                        shorter = shorter.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0]
+                        longer = longer.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0]
+    
+    
+                        collapsee.append(shorter)
+                        collapsed_into.append(longer)
+                        direction.append('-->')
+    
+                        #move_from = os.path.join(cluster_folder, longer + '.fna')
+                        #move_to = os.path.join(cluster_folder, shorter + '.fna')
+    
+                        logging.debug('Collapsing {} --> {}'.format(shorter, longer))
+    
+                        try:
+                            os.remove(os.path.join(cluster_folder, shorter + '.fna'))
+                        except FileNotFoundError:
+                            if shorter in collapsee:
+                                continue
+                            else:
+                                logging.error('File not found: {}. Unable to continue.'.format(os.path.join(cluster_folder, shorter + '.fna')))
+                                sys.exit(1)
+    
+    
+                    collapsed_log = pd.DataFrame({'Collapsee': collapsee, 'Direction': direction, 'Collapsed_Into': collapsed_into})
+                    collapsed_log_file = os.path.join(outdir, DefaultValues.COLLAPSED_LOG_FILE)
+                    collapsed_log.to_csv(collapsed_log_file, sep='\t', index=False, header=False)
+    
+                    logging.info('Found and collapsed {} related clusters.'.format(len(set(collapsee))))
+    
+                    #update cluster information
+                    remove_ids = [int(x.split('ID_')[-1].split('_')[0]) for x in collapsee]
+                    new_ids = [int(x.split('ID_')[-1].split('_')[0]) for x in collapsed_into]
+    
+                    re_id = dict(zip(remove_ids, new_ids))
+    
+                    cluster_contigs_info['Cluster_ID']  = cluster_contigs_info['Cluster_ID'].\
+                        apply(lambda x: 'Collapsed into {}'.format(re_id[int(x)]) if int(x) in re_id.keys() else x)
+                    cluster_information = cluster_information[~cluster_information['ID'].isin(remove_ids)]
+    
+                    #append_to_leftovercontigs = cluster_contigs_info[cluster_contigs_info['Cluster_ID'].isin(remove_ids)].copy()
+                    #cluster_contigs_info = cluster_contigs_info[~cluster_contigs_info['Cluster_ID'].isin(remove_ids)]
+                    #append_to_leftovercontigs['Cluster_ID'] = new_ids
+                    #cluster_contigs_info = pd.concat([cluster_contigs_info, append_to_leftovercontigs])
+    
+    
+                # elif len(paf[paf['ARshort'] > ARcutoff]) != len(sel):
+                    # Is there a difference between mapping well with low ANI and mapping decently with low ANI?
+    
 
         # Let's set a reasonable secondary cutoff and do FASTANI on clusters passing this.
 
