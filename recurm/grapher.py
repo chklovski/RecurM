@@ -28,8 +28,8 @@ class ClusterGraph():
             else:
                 min_linear_needed = total_aligns
         else:
-            min_linear_needed = 0.9 * total_aligns
-        if row['Circular_Count'] > 0:
+            min_linear_needed = 0.91 * total_aligns
+        if row['Circular_Count'] > 0 or row['Short_Circular_Count'] > 0:
             return 'Circular'
         elif row['Imperfect_Count'] == 0:
             return 'Linear'
@@ -92,14 +92,18 @@ class ClusterGraph():
         linears['Circularity'] = 'Imperfect'
         
         if circular_success:
-            circs = pd.read_csv(circular_alignments, sep='\t', names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 'AR', 'LR', 'ANI'])
-            circs['Circularity'] = 'Circular'
+            circs = pd.read_csv(circular_alignments, sep='\t', names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 'AR', 'LR', 'ANI', 'Circularity'])
+#            circs['Circularity'] = circs.apply(lambda row:
+#                                               'Circular' if row['LR'] >= DefaultValues.FIRST_PASS_AVA_LR_CUTOFF else 'Short_Circular', axis=1)
             all_alignments = pd.concat([circs, linears])
         else:
             all_alignments = linears
 
         all_alignments['Circularity'] = all_alignments.apply(lambda row: self.identify_perfect_edge_alignment(row[2], row[7], row[3], row[4], row[8], row[9], row['Circularity']), axis=1)
         all_alignments['Distance'] = all_alignments['LR'] * all_alignments['AR'] * all_alignments['ANI']
+
+        #set weight to 0 for short circular alignment in order to not count it as a full alignment for min_contig_count
+        all_alignments['Distance'] = all_alignments.apply(lambda row: 0 if row['Circularity'] == 'Short_Circular' else row['Distance'], axis=1)
 
         edgeList = all_alignments[[1, 6, 'Distance']].values
         G = nx.Graph()
@@ -114,6 +118,8 @@ class ClusterGraph():
 
         sub_graphs = self.prune_graph(initial_subgraphs, min_cluster_size)
 
+        logging.info(f'Min cluster size: {min_cluster_size}')
+
         # prune any graphs with nodes < min cluster size
         # also make sure we're not walking through the same sample more than once per cluster
         final_nodes = []
@@ -121,13 +127,23 @@ class ClusterGraph():
 
 
         for idx, entry in enumerate(list(sub_graphs)):
+            weight_count = 0
             sample_list = []
             for o in entry.nodes():
                 sample_list.append(o.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0])
+
+            #not counting 0-weighted edges as those are short_circular alignments
+
+            for _, _, data in entry.edges(data=True):
+                if data['weight'] > 0:
+                    weight_count += 1
+
+
             # only one contig per sample
             if len(sample_list) == len(set(sample_list)):
                 # enough contigs to make valid cluster
-                if len(sample_list) >= min_cluster_size:
+                if len(sample_list) >= min_cluster_size and (weight_count >= min_cluster_size-1):
+
                     final_nodes.append(entry.nodes())
                     final_subgraphs.append(sub_graphs[idx])
 
@@ -137,8 +153,8 @@ class ClusterGraph():
             #TODO: Probably remove all the intermediate stuff at this point
             sys.exit(0)
 
-        # construct an overview table of results
-        nx.write_gpickle(final_nodes, '{}/{}'.format(outdir, DefaultValues.GRAPH_PICKLE_NAME), protocol=4)
+        # TODO: move to after filtering is performed
+        # nx.write_gpickle(final_nodes, '{}/{}'.format(outdir, DefaultValues.GRAPH_PICKLE_NAME), protocol=4)
 
         all_alignments['Key'] = all_alignments[1] + all_alignments[6]
         all_alignments['Key2'] = all_alignments[6] + all_alignments[1]
@@ -157,6 +173,7 @@ class ClusterGraph():
             samples = []
             members = len(entry)
             circ_count = 0
+            short_circ_count = 0
             linear_count = 0
             imprefect_count = 0
 
@@ -172,6 +189,8 @@ class ClusterGraph():
                     linear_count += 1
                 elif outcome == 'Circular':
                     circ_count += 1
+                elif outcome == 'Short_Circular':
+                    short_circ_count += 1
                 elif outcome == 'Imperfect':
                     imprefect_count += 1
 
@@ -185,6 +204,7 @@ class ClusterGraph():
                  'Largest_Contig_Size': l3,
                  'Total_Contigs': members,
                  'Circular_Count': circ_count,
+                 'Short_Circular_Count': short_circ_count,
                  'Linear_Count': linear_count,
                  'Imperfect_Count': imprefect_count}
 
@@ -198,15 +218,6 @@ class ClusterGraph():
         #assign label
         infos['Structure'] = infos.apply(lambda row: self.assign_cluster_label(row), axis=1)
         infos['Average_Bp_Size'] = infos['Average_Bp_Size'].astype(int)
-        logging.info('')
-        logging.info('********************************************* RESULTS: *********************************************')
-        logging.info('Identified a total of {} clusters. Of these, {} are circular, {} are linear and {} are imperfect.'
-                     .format(len(infos),
-                             len(infos[infos['Structure'] == 'Circular']),
-                             len(infos[infos['Structure'] == 'Linear']),
-                             len(infos[infos['Structure'] == 'Imperfect'])))
-        logging.info('****************************************************************************************************')
-        logging.info('')
 
         return infos, final_subgraphs
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 __author__ = "Alex Chklovski"
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 __maintainer__ = "Alex Chklovski"
 __email__ = "chklovski near gmail.com"
 __status__ = "Development"
@@ -12,13 +12,16 @@ import sys
 import logging
 import tempfile
 import pandas as pd
+import subprocess
 import os
+import shutil
 
 sys.path = [os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')] + sys.path
 
 from recurm import clusterer
 from recurm import FASTA_manager
 from recurm import fileManager
+from recurm.defaultValues import DefaultValues
 
 
 def generate_header():
@@ -77,7 +80,7 @@ if __name__ == '__main__':
 
     cluster_arguments.add_argument('--force', action='store_true', help='overwrite output directory [default: do not overwrite]',
                                    default=False)
-
+    #todo: fix this for multiple recurm rounds
     cluster_arguments.add_argument('--threads', '-t', type=int, metavar='num_threads',
                                    help='number of CPUS to use [default: %i]' % num_threads, default=num_threads)
 
@@ -86,13 +89,19 @@ if __name__ == '__main__':
                                    default=min_contig_len)
 
     cluster_arguments.add_argument('-c', '--min_cluster_size', '--min-cluster-size',
-                                   help='Minimum size of putative cluster. [Default: 3]', default=3)
+                                   help='Minimum size of putative cluster. [Default: 3]', default=DefaultValues.MIN_CLUSTER_SIZE)
+
+    cluster_arguments.add_argument('-s', '--size_bins', '--size-bins',
+                                   help='Divide contigs into this many size bins for faster RecurM processing. Set to 1 to run RecurM on all assemblies simultaneously [Default: 4]', default=DefaultValues.CONTIG_SIZE_BINS)
 
     cluster_arguments.add_argument('--resume', action='store_true',
                                    help='Continue from a previous RecurM run to skip steps already done.', default=False)
                                    
-    cluster_arguments.add_argument('--nocollapse', action='store_true',
-                                   help='Do not collapse highly related short clusters into long clusters at the end - keep all clusters [default: collapse]', default=False)
+    cluster_arguments.add_argument('--keep_related', action='store_true',
+                                   help='Do not collapse highly related short clusters into long clusters at the end - keep all clusters [default: Collapse]', default=False)
+
+    cluster_arguments.add_argument('--collapse_against_assembly', action='store_true',
+                                   help='Collapse any shorter clusters into longer contigs (will discard integrated elements) [default: True]', default=False)
 
 
     if (len(sys.argv) == 1 or sys.argv[1] == '-h' or sys.argv[1] == '--help' or sys.argv[1] == 'help'):
@@ -123,11 +132,86 @@ if __name__ == '__main__':
         #        mode = validate_args_model_choice(args)
 
         # TODO: Check if we got a list of files or a folder. For now assume a single folder with nothing but assemblies
+
+        #make sure output directory is empty and writable
+        fileManager.check_empty_dir(os.path.abspath(args.output), args.force)
+
         assemblies_list = fileManager.list_assembly_folder(args.assemblies_directory, args.extension)
         logging.info("Clustering contigs from {} assemblies with {} threads.".format(len(assemblies_list), args.threads))
+        if args.size_bins > 1:
+            size_bins = FASTA_manager.determine_size_cutoffs(args.threads, assemblies_list, args.min_contig_len, args.size_bins)
+        else:
+            size_bins = []
 
-        clust_process = clusterer.Clusterer(args.min_contig_len, args.threads, assemblies_list,  args.output, args.extension, args.force, args.resume, args.nocollapse)
-        clust_process.cluster_all_vs_all()
+        #Set up size bin folders
+
+        logging.info(
+            'Concatenating all assemblies into master assembly files. Only contigs of length {} or more bp considered.'.format(
+                args.min_contig_len))
+        combined_assemblies_list, master_assembly = FASTA_manager.setup_and_format_assemblies(args.min_contig_len, assemblies_list, args.output,
+                                                                        size_bins)
+
+
+
+        # Run recurM on each size bin separately
+
+        combined_chunk_contigs = os.path.join(args.output, DefaultValues.EXTRACTED_CHUNK_CONTIGS_FILE)
+
+        for idx, entry in enumerate(combined_assemblies_list):
+            logging.info('Aligning contigs from chunk {} out of {}'.format(idx+1, len(combined_assemblies_list)))
+
+            clust_process = clusterer.Clusterer(args.min_contig_len, args.min_cluster_size, args.threads,
+                                            os.path.abspath(os.path.dirname(entry)), args.extension, args.force, args.resume,
+                                            args.keep_related, args.collapse_against_assembly)
+
+            clust_process.cluster_all_vs_all(os.path.abspath(entry), master_assembly, is_chunk=True)
+
+            circ_file = os.path.join(os.path.dirname(entry), DefaultValues.CIRCULAR_ALIGNMENTS_NAME)
+            linear_file = os.path.join(os.path.dirname(entry), DefaultValues.ALIGNMENT_DIR, DefaultValues.SECOND_PASS_NAME)
+
+            #
+            logging.info('Adding successfully aligned contigs to contig master file')
+
+            if os.path.isfile(circ_file):
+                cmd = "cut -f1 {} >> {}; cut -f6 {} >> {}" \
+                    .format(circ_file, combined_chunk_contigs, circ_file, combined_chunk_contigs)
+                logging.debug(cmd)
+                subprocess.call(cmd, shell=True)
+
+            if os.path.isfile(linear_file):
+                cmd = "cut -f2 {} >> {}; cut -f7 {} >> {}"\
+                    .format(linear_file, combined_chunk_contigs, linear_file, combined_chunk_contigs)
+                logging.debug(cmd)
+                subprocess.call(cmd, shell=True)
+
+                logging.debug('Finished concatenating hashes using awk and cat')
+
+
+        logging.info('Sorting resultant contig file.')
+        cmd = "sort -u --parallel {} {} > {}_tmp && mv {}_tmp {}" \
+           .format(args.threads, combined_chunk_contigs, combined_chunk_contigs, combined_chunk_contigs, combined_chunk_contigs)
+        logging.debug(cmd)
+        subprocess.call(cmd, shell=True)
+
+        #remove folders
+        for folder in combined_assemblies_list:
+           folder = os.path.dirname(os.path.abspath(folder))
+           shutil.rmtree(folder)
+
+        #make a new combined assemblies file from
+        contigs_assembly_file = FASTA_manager.create_final_contigs_assembly(combined_chunk_contigs, master_assembly)
+
+
+        clust_process = clusterer.Clusterer(args.min_contig_len, args.min_cluster_size, args.threads,
+                                            os.path.abspath(os.path.dirname(contigs_assembly_file)), args.extension, args.force,
+                                            args.resume,
+                                            args.keep_related, args.collapse_against_assembly)
+
+        clust_process.cluster_all_vs_all(os.path.abspath(contigs_assembly_file), master_assembly, is_chunk=False)
+
+
+
+
 #        clust_process.map_assemblies()
 
 

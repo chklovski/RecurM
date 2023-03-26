@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import subprocess
 
+
 def remove_intermediates(list_of_files):
     for entry in list_of_files:
         os.remove(entry)

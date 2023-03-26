@@ -4,6 +4,7 @@ from pathlib import Path
 class DefaultValues():
     """Default values for filenames and common constants."""
 
+
     COMBINED_ASSEMBLY_NAME = 'combined_assemblies.fasta'
     FIRST_PASS_MAPPING_NAME = 'ava_initial_alignments'
     SECOND_PASS_NAME = 'initial_subfilter.passed'
@@ -13,6 +14,8 @@ class DefaultValues():
     COMBINED_CONTIGS_FILE = 'combined_contigs_ref.fasta'
     COMBINED_CONTIGS_MAPPING_FILE = 'combined_ref_map.paf'
 
+    ASSEMBLY_DEREP_FILE = 'cluster_to_assembly_map.paf'
+
     COLLAPSED_LOG_FILE = 'collapsed_related_clusters.tsv'
 
     MAPPING_DIR = 'mapping_data'
@@ -20,7 +23,16 @@ class DefaultValues():
     HASHING_DIR = 'hashing_data'
     RESULTS_DIR = 'results'
 
+    CONTIG_SIZE_BINS = 100
+    DEFAULT_MIN_BIN_SIZE = 20000
+
+    SIZE_BIN_NAME = 'RECURM_SIZEBIN'
+    MASTER_ASSEMBLY_FILE = 'MASTER_ASSEMBLY_FILE'
+
+    EXTRACTED_CHUNK_CONTIGS_FILE = 'contigs_to_cluster.tsv'
+
     GRAPH_PICKLE_NAME = 'single_linkage_graph_data.graph'
+
 
     DEFAULT_FASTA_HEADER_SEPARATOR = 'Ω'
 
@@ -28,7 +40,18 @@ class DefaultValues():
     FIRST_PASS_AVA_AR_CUTOFF = 0.9
     FIRST_PASS_AVA_ANI_CUTOFF = 0.9
 
+    ASSEMBLY_DEREP_CONTIG_PERCENT_LONGER = 0.25
+
+    # aligns to x% of all other contigs in cluster
+    TIGHTNESS_CLUSTER_CUTOFF = 0.01
+
+    # percent representative sequence size is allowed to deviate from mean
+    # intended to filter out smeared assembly length type clusters
+    ALLOWED_SIZE_DEVIATION_WITHIN_CLUSTER = 0.99
+
     SECOND_PASS_CONTIGS_AR_SHORT_CUTOFF = 0.70
+
+    CIRCULAR_ANI_INCLUDING_CUTOFF = 0.956
 
     MIN_CLUSTER_SIZE = 3
 
@@ -36,7 +59,7 @@ class DefaultValues():
 
     FILTER_CHUNKSIZE = 25000
 
-    PAF_CHUNK_SIZE = '250MB'
+    PAF_CHUNK_SIZE = '50MB'
 
 
 

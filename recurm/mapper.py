@@ -135,13 +135,23 @@ class Mapper():
 class AllVsAllMapper(Mapper):
 
 
-    def mapAVA(self, combined_assemblies, map_outdir):
+    def mapAVA(self, combined_assemblies, map_outdir, min_contig_len):
         mapping_input = combined_assemblies
         mapping_out = os.path.join(map_outdir, DefaultValues.FIRST_PASS_MAPPING_NAME)
+        # minimap2 options:
+
+        #-m - minimum matching bases (effectively). Should be set to ~40% of desired minimum contig size.
+        # Drastically reduces minimap2 output that needs to be parsed
+        # -K and -I regulates memory usage on large datasets. -K in particular can be higher if memory > 100GB is available
+        # -k (k-mer size) and -w (minimizer window) speeds up mapping at cost of more memory.
 
         try:
-            cmd = "minimap2 -x ava-ont -t {} {} {} -v1 | split --additional-suffix=.paf -d --line-bytes={} - {}" \
-                .format(self.nthreads, mapping_input, mapping_input, DefaultValues.PAF_CHUNK_SIZE, mapping_out)
+
+
+            #m - min mapping length should be ~ 0.3/0.4 of min contig length to filter out tons of tiny useless alignments
+#            cmd = "minimap2 -x ava-ont -m {} -t {} {} {} -v1 | split --additional-suffix=.paf -d --line-bytes={} - {}" \
+            cmd = "minimap2 -k16  -Xw5 -m {}  -g1000 -r1000  --max-chain-skip 500 --max-chain-iter 1000 -K 5G -I 20G -2 -t {} {} {} -v1 | split --additional-suffix=.paf -d --line-bytes={} - {}" \
+                .format(min_contig_len * 0.4, self.nthreads, mapping_input, mapping_input, DefaultValues.PAF_CHUNK_SIZE, mapping_out)
 
             logging.debug(cmd)
             subprocess.call(cmd, shell=True)
@@ -154,11 +164,14 @@ class AllVsAllMapper(Mapper):
 
 
 
-    def read_hashes_and_process_alignments(self, mapping_dir, hash_file, LRcutoff, ARcutoff, ANIcutoff, outfile):
-        
+    def read_hashes_and_process_alignments(self, mapping_dir, hash_file, LRcutoff, ARcutoff, ANIcutoff, outfile, short_circular):
+
+
+        use_short_circular = short_circular
+
         #read in hashes one by one;
 
-        logging.info('Iterating through alignment data a second time to extract circular and complex alignments')
+        logging.debug('Iterating through alignment data a second time to extract circular and complex alignments')
 
         hash_length = self.line_count(hash_file)
 
@@ -230,7 +243,7 @@ class AllVsAllMapper(Mapper):
             for _ in range(self.nthreads):
                 calcProc.append(
                     mp.Process(target=self.__set_up_processing_sample_with_multiple_aligns,
-                               args=(workerQueue, writerQueue, processed_multialignment_dfs, hash_retrieve_params, LRcutoff)))
+                               args=(workerQueue, writerQueue, processed_multialignment_dfs, hash_retrieve_params, LRcutoff, use_short_circular)))
             writeProc = mp.Process(target=self.__report_progress_paf,
                                    args=(len(hash_retrieve_params), writerQueue))
 
@@ -290,13 +303,17 @@ class AllVsAllMapper(Mapper):
         extracted_aligns.reset_index(drop=True, inplace=True)
 
         index = 0
+
         real_circs = []
 
         #Now go through the double-alignment pairs and make sure that they point in the right direction.
 
+        circular_labels = []
+
+
 
         while index < len(extracted_aligns):
-        
+
 
 
             subsub = extracted_aligns.iloc[index:index + 2, :] #We've pre-filtered to 2 alignments only
@@ -305,9 +322,18 @@ class AllVsAllMapper(Mapper):
             #    continue #skip
             if len(subsub[subsub['ANI'] > ANIcutoff]) == len(subsub): #all alignments pass ANI cutoff
 
-                if subsub['AR'].values[0] + subsub['AR'].values[1] > ARcutoff:
-                    # direction is conserved between alignments, ie. no palindromic alignments
+                passed = False
+                short = False
 
+                if (subsub['AR'].values[0] + subsub['AR'].values[1] > ARcutoff):
+                    passed = True
+
+                elif (subsub['ARshort'].values[0] + subsub['ARshort'].values[1] > ARcutoff) and use_short_circular:
+                    passed = True
+                    short = True
+
+                if passed:
+                    # direction is conserved between alignments, ie. no palindromic alignments
                     astart = subsub[3].values[0]
                     aend = subsub[4].values[0]
                     bstart = subsub[8].values[0]
@@ -343,8 +369,19 @@ class AllVsAllMapper(Mapper):
                             if subsub[5].values[0] == '-':
                                 if firstHalfA and firstHalfB:
                                     real_circs.append(subsub)
+
+                                    if short:
+                                        circular_labels.extend(('Short_Circular', 'Short_Circular'))
+                                    else:
+                                        circular_labels.extend(('Circular', 'Circular'))
+
                                 elif not firstHalfA and not firstHalfB:
                                     real_circs.append(subsub)
+
+                                    if short:
+                                        circular_labels.extend(('Short_Circular', 'Short_Circular'))
+                                    else:
+                                        circular_labels.extend(('Circular', 'Circular'))
                             #investigate other types:
                                 #elif not firstHalfA and firstHalfB:
                                 #    print('- dir singular: not firstHalfA and firstHalfB')
@@ -357,8 +394,20 @@ class AllVsAllMapper(Mapper):
                             elif subsub[5].values[0] == '+':
                                 if not firstHalfA and firstHalfB:
                                     real_circs.append(subsub)
+
+                                    if short:
+                                        circular_labels.extend(('Short_Circular', 'Short_Circular'))
+                                    else:
+                                        circular_labels.extend(('Circular', 'Circular'))
+
                                 elif firstHalfA and not firstHalfB:
                                     real_circs.append(subsub)
+
+                                    if short:
+                                        circular_labels.extend(('Short_Circular', 'Short_Circular'))
+                                    else:
+                                        circular_labels.extend(('Circular', 'Circular'))
+
                             #investigate other types:
                                 #elif not firstHalfA and not firstHalfB:
                                     #print('+ dir singular: not firstHalfA and not firstHalfB')
@@ -372,8 +421,19 @@ class AllVsAllMapper(Mapper):
                         if overlap1 < 10 and overlap2 < 10:
                               if not firstHalfA and firstHalfB:
                                     real_circs.append(subsub)
+
+                                    if short:
+                                        circular_labels.extend(('Short_Circular', 'Short_Circular'))
+                                    else:
+                                        circular_labels.extend(('Circular', 'Circular'))
+
                               elif firstHalfA and not firstHalfB:
                                     real_circs.append(subsub)
+
+                                    if short:
+                                        circular_labels.extend(('Short_Circular', 'Short_Circular'))
+                                    else:
+                                        circular_labels.extend(('Circular', 'Circular'))
 
             index += 2
 
@@ -385,8 +445,10 @@ class AllVsAllMapper(Mapper):
             del result['HashCount']
             del result['Sample']
             del result['Hash']
-    
-            logging.info('Writing circular alignments to file.')
+            del result['ARshort']
+
+            result['Circularity'] = circular_labels
+            logging.debug('Writing circular alignments to file.')
             result.to_csv(outfile, sep='\t', index=False, header=False)
 
             
@@ -421,8 +483,8 @@ class AllVsAllMapper(Mapper):
         #spin off into multiple threads
 
         self.threads_per_bin = max(1, int(threads / len(paf_list)))
-        logging.info('Processing alignment data.')
-        logging.info("Data is split into {} chunks of {} each. Analysing with {} threads:"
+        logging.debug('Processing alignment data.')
+        logging.info("Alignment data is split into {} chunks of {} each. Analysing with {} threads:"
                      .format(len(paf_list), DefaultValues.PAF_CHUNK_SIZE, threads))
 
         # process each bin in parallel
@@ -465,7 +527,7 @@ class AllVsAllMapper(Mapper):
         full_hash_file = os.path.join(hash_dir, DefaultValues.HASH_FILE_NAME)
         full_passed_file = os.path.join(align_dir, DefaultValues.SECOND_PASS_NAME)
 
-        logging.info('Merging hash files and alignments kept after first pass.')
+        logging.debug('Merging hash files and alignments kept after first pass.')
         try:
             #TODO: There has got to be a better way of doing this...
             cmd = "for i in {0}/*.hash; do awk '{{print $0 @\\t@ FILENAME;}}' $i >> {1}/{2}; rm $i; done"\
@@ -489,6 +551,18 @@ class AllVsAllMapper(Mapper):
 
 
     def __set_up_paf_thread(self, queue_in, queue_out, align_dir, hash_dir, chunksize, LRcutoff, ARcutoff, ANIcutoff):
+    
+        def filter_decider(AR, lena):
+            if lena > 30000 and AR > 0.15:
+                return 'YES'
+            elif lena > 50000 and AR > 0.1:
+                return 'YES'
+            elif lena > 100000 and AR > 0.05:
+                return 'YES'
+            elif lena < 10000 and AR > 0.2:
+                return 'YES'
+            else:
+                return 'NO'
 
         while True:
             paf = queue_in.get(block=True, timeout=None)
@@ -518,8 +592,15 @@ class AllVsAllMapper(Mapper):
                     chunk['Hash'] = chunk.apply(lambda row: self.hashsum(row[1], row[6]), axis=1)
 
                     # multiple alignments need at least ~20% length coverage on a side to be a decent match
-                    chunk2 = chunk[chunk['AR'] > 0.2]
+                    # changed to account for diversity of lengths
 
+#                    chunk['FilterAR'] = chunk.apply(lambda row: filter_decider(row['AR'], (row[2] + row[7]) / 2), axis=1)
+#                    chunk2 = chunk[chunk['FilterAR'] == 'YES']                    
+#                    del chunk2['FilterAR']
+#                    del chunk['FilterAR']
+
+
+                    chunk2 = chunk[chunk['AR'] > 0.1]
                     chunk2.iloc[:, -1].to_csv(out_hash, mode='a', sep='\t', header=False)
                     del chunk['Hash']
                     del chunk['Sample']
@@ -534,7 +615,7 @@ class AllVsAllMapper(Mapper):
             queue_out.put(paf)
 
 
-    def __set_up_processing_sample_with_multiple_aligns(self, queue_in, queue_out, align_list, param_list, LRcutoff):
+    def __set_up_processing_sample_with_multiple_aligns(self, queue_in, queue_out, align_list, param_list, LRcutoff, use_short_circular):
         ''' Begin processing sample '''
 
         while True:
@@ -561,8 +642,6 @@ class AllVsAllMapper(Mapper):
 
             extracted_aligns['LR'] = extracted_aligns.apply(
                 lambda row: self.calcLR(row[2], row[7], row[11], row[10]), axis=1)
-            # aligned ratio may be short, but length ratio should be solid
-            extracted_aligns = extracted_aligns[extracted_aligns['LR'] >= LRcutoff]
             # make sure again:
             extracted_aligns['Sample'] = extracted_aligns.apply(
                 lambda row: self.samplify(row[1], row[6]), axis=1)
@@ -581,6 +660,18 @@ class AllVsAllMapper(Mapper):
                 lambda row: self.calcAR(row[2], row[7], row[11], row[10]), axis=1)
             extracted_aligns['ANI'] = extracted_aligns.apply(
                 lambda row: self.calcANI(row[2], row[7], row[11], row[10]), axis=1)
+
+            extracted_aligns['ARshort'] = extracted_aligns.apply(
+                lambda row: self.calcARshort(row[2], row[7], row[11], row[10]), axis=1)
+
+            #extracted_aligns = extracted_aligns[extracted_aligns['ANI'] >= DefaultValues.FIRST_PASS_AVA_ANI_CUTOFF]
+
+            # aligned ratio may be short, but length ratio should be at least one third when using ARshort
+            # or default if not using rescue_short_circular
+            if use_short_circular:
+                extracted_aligns = extracted_aligns[extracted_aligns['LR'] >= 0.34]
+            else:
+                extracted_aligns = extracted_aligns[extracted_aligns['LR'] >= LRcutoff]
 
 
             align_list.append(extracted_aligns)
@@ -613,6 +704,138 @@ class AllVsAllMapper(Mapper):
 
 class ReferenceMapper(Mapper):
     pass
+
+
+class AssemblyMapper(Mapper):
+    def map_clusters_against_assembly(self, cluster_folder, assembly_file, outdir):
+
+
+        all_contigs = fileManager.list_assembly_folder(cluster_folder, '.fna')
+        combined_contig_file = os.path.join(outdir, DefaultValues.COMBINED_CONTIGS_FILE)
+
+        with open(combined_contig_file, 'w') as fout:
+
+            for contig in all_contigs:
+                for name, seq, _ in FASTA_manager.readfq(open(contig)):
+                    try:
+                        basefile = os.path.splitext(os.path.basename(contig))[0]
+                        #CLUSTERINFO <SEP> ORIGINALCONTIGNAME
+                        header = \
+                        '{}{}{}'.format(basefile, DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR, name)
+                        fout.write('>' + header + '\n')
+                        fout.write(seq + '\n')
+
+                    except Exception as e:
+                        logging.error('Could not write combined contigs file: {}'.format(e))
+                        sys.exit(1)
+
+
+        mapping_output = '{}/{}'.format(outdir, DefaultValues.ASSEMBLY_DEREP_FILE)
+
+        try:
+            cmd = "minimap2 -x ava-ont -t {} {} {} --dual=yes -v1 > {}" \
+                .format(self.nthreads, combined_contig_file, assembly_file, mapping_output)
+
+            logging.debug(cmd)
+            subprocess.call(cmd, shell=True)
+            logging.debug('Finished Running Minimap2')
+        except Exception as e:
+            logging.error('An error occured while running Minimap2: {}'.format(e))
+            sys.exit(1)
+
+        return mapping_output
+
+    def remove_mapped_clusters(self, assembly_mapped_contigs, cluster_folder,
+                               LRcutoff, ARcutoff, ANIcutoff, outdir,
+                               cluster_info, cluster_contigs_info):
+
+        #currently holding everything in memory, we should chunk and only keep good matches
+
+        assembly_file_len = 0
+        concat_df = []
+
+        try:
+            with open(assembly_mapped_contigs) as f:
+                assembly_file_len = sum(1 for line in f)
+
+        except:
+            logging.info('Not collapsing clusters against assembly as no valid mapping was generated.')
+            return cluster_information, cluster_contigs_info
+
+        if assembly_file_len < 2:
+            logging.info('Not collapsing clusters against assembly as no valid mapping was generated.')
+            return cluster_information, cluster_contigs_info
+
+        else:
+            chunksize = DefaultValues.FILTER_CHUNKSIZE
+            count = 0
+
+            for chunk in pd.read_csv(assembly_mapped_contigs,
+                             names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+                             sep='\t', chunksize=chunksize):
+
+                #remove self-alignment
+                chunk = chunk[chunk[1] != chunk[6]]
+
+                chunk['ANI'] = chunk.apply(lambda row: self.calcANI(row[2], row[7], row[11], row[10]), axis=1)
+                chunk['ARshortContig'] = (chunk[9] - chunk[8]) / chunk[7]
+
+                chunk['AssembledContigLonger'] = chunk.apply(lambda row: 'YES' if \
+                    float(row[2]) > float(row[7] + row[7] * DefaultValues.ASSEMBLY_DEREP_CONTIG_PERCENT_LONGER) else 'NO', axis=1)
+
+                chunk = chunk[chunk['AssembledContigLonger'] == 'YES']
+                chunk = chunk[chunk['ANI'] > ANIcutoff]
+                chunk = chunk[chunk['ARshortContig'] > ARcutoff]
+
+
+                if logging.root.level == logging.INFO or logging.root.level == logging.DEBUG:
+                    statusStr = '    Finished processing %d of %d (%.2f%%) assembly alignment chunks.' % (
+                        count, assembly_file_len, float(assembly_file_len) * 100 / assembly_file_len)
+                    sys.stdout.write('\r{}'.format(statusStr))
+                    sys.stdout.flush()
+                count += chunksize
+
+                if len(chunk) > 0:
+                    concat_df.append(chunk)
+
+        if logging.root.level == logging.INFO or logging.root.level == logging.DEBUG:
+            sys.stdout.write('\n')
+
+        if len(concat_df) > 0:
+            paf = pd.concat(concat_df)
+
+            paf['ID'] = paf[6].apply(lambda x: x.split('_ID_')[-1].split('_')[0])
+            cluster_contig_connection = dict(zip(paf['ID'], paf[1]))
+
+
+            clusters_to_remove = paf[6].unique()
+
+
+            cluster_names_to_remove = [x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0] for x in clusters_to_remove]
+            ids_to_remove = [x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0].split('_ID_')[-1].split('_')[0] for x in cluster_names_to_remove]
+
+            before_removal = len(cluster_info)
+            removed_cluster_info = cluster_info[cluster_info['ID'].isin(ids_to_remove)]
+            cluster_info = cluster_info[~cluster_info['ID'].isin(ids_to_remove)]
+            after_removal = len(cluster_info)
+
+            logging.info(f'Removed {before_removal - after_removal} clusters that were part of longer assembled contigs.')
+
+
+            removed_cluster_info['Mapped_to_contig'] = removed_cluster_info['ID'].apply(lambda x: cluster_contig_connection[str(x)])
+
+            for id in cluster_names_to_remove:
+                file = os.path.join(cluster_folder, id + '.fna')
+                os.remove(file)
+
+            removed_cluster_info.to_csv(os.path.join(outdir, 'removed_integrated_clusters.tsv'), sep='\t', index=False)
+
+            return cluster_info, cluster_contigs_info
+        else:
+            logging.info('No clusters were found to be integrated into a contig.')
+            return cluster_info, cluster_contigs_info
+
+
 
 class WithinClusterMapper(Mapper):
 
@@ -653,45 +876,57 @@ class WithinClusterMapper(Mapper):
             logging.error('An error occured while running Minimap2: {}'.format(e))
             sys.exit(1)
 
-        return mapping_output
+        return mapping_output, combined_contig_file
 
     def collapse_related_clusters(self, mapping_file, cluster_folder,
                                   LRcutoff, ARcutoff, ANIcutoff, outdir,
-                                  cluster_information, cluster_contigs_info, leftover_contigs_info, nocollapse):
-        paf = pd.read_csv(mapping_file,
-                             names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], sep='\t')
+                                  cluster_information, cluster_contigs_info, leftover_contigs_info,
+                                  keep_related, filteredout):
+        try:
+            paf = pd.read_csv(mapping_file,
+                                 names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], sep='\t')
 
-        #remove self-alignment
-        paf = paf[paf[1] != paf[6]]
+            #remove self-alignment
+            paf = paf[paf[1] != paf[6]]
 
-        paf['AR'] = paf.apply(lambda row: self.calcAR(row[2], row[7], row[11], row[10]), axis=1)
-        paf['LR'] = paf.apply(lambda row: self.calcLR(row[2], row[7], row[11], row[10]), axis=1)
-        paf['ANI'] = paf.apply(lambda row: self.calcANI(row[2], row[7], row[11], row[10]), axis=1)
-        paf['ARshort'] = paf.apply(lambda row: self.calcARshort(row[2], row[7], row[11], row[10]), axis=1)
+
+
+
+            paf['AR'] = paf.apply(lambda row: self.calcAR(row[2], row[7], row[11], row[10]), axis=1)
+            paf['LR'] = paf.apply(lambda row: self.calcLR(row[2], row[7], row[11], row[10]), axis=1)
+            paf['ANI'] = paf.apply(lambda row: self.calcANI(row[2], row[7], row[11], row[10]), axis=1)
+            paf['ARshort'] = paf.apply(lambda row: self.calcARshort(row[2], row[7], row[11], row[10]), axis=1)
+        except Exception as e:
+            print(e)
+            logging.info('Not collapsing clusters as no valid mapping was generated.')
+            keep_related = True
 
         collapsee = []
 
-        if not nocollapse:
+        if len(paf) == 0:
+            return cluster_information, cluster_contigs_info, leftover_contigs_info, None, None
+
+        if not keep_related:
             if len(paf[paf['ARshort'] > ARcutoff]) > 0:
-    
+
                 sel = paf[paf['ARshort'] > ARcutoff].copy()
                 sel = sel[sel['ANI'] > ANIcutoff]
-    
-    
+
+
                 #collapsee = []
                 collapsed_into = []
                 direction = []
-    
+
                 if len(sel) > 0:
                     logging.info('Collapsing related clusters.')
                     #indexes_for_collapse = sel.index.values
-    
+
                     #sel = sel.sort_values(by=2, ascending=True)
                     #sel = sel.sort_values(by=7, ascending=True)
-    
+
                     #collapse shorter cluster into longer cluster
                     sel.reset_index(drop=True, inplace=True)
-    
+
                     for index, row in sel.iterrows():
                         if sel.at[index, 2] > sel.at[index, 7]:
                             # first element is longer
@@ -700,20 +935,21 @@ class WithinClusterMapper(Mapper):
                         else:
                             shorter = sel.at[index, 1]
                             longer = sel.at[index, 6]
-    
+
                         shorter = shorter.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0]
                         longer = longer.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0]
-    
-    
+
+
                         collapsee.append(shorter)
                         collapsed_into.append(longer)
                         direction.append('-->')
-    
+
                         #move_from = os.path.join(cluster_folder, longer + '.fna')
                         #move_to = os.path.join(cluster_folder, shorter + '.fna')
-    
+
                         logging.debug('Collapsing {} --> {}'.format(shorter, longer))
-    
+
+
                         try:
                             os.remove(os.path.join(cluster_folder, shorter + '.fna'))
                         except FileNotFoundError:
@@ -722,33 +958,59 @@ class WithinClusterMapper(Mapper):
                             else:
                                 logging.error('File not found: {}. Unable to continue.'.format(os.path.join(cluster_folder, shorter + '.fna')))
                                 sys.exit(1)
-    
-    
+
+
                     collapsed_log = pd.DataFrame({'Collapsee': collapsee, 'Direction': direction, 'Collapsed_Into': collapsed_into})
                     collapsed_log_file = os.path.join(outdir, DefaultValues.COLLAPSED_LOG_FILE)
                     collapsed_log.to_csv(collapsed_log_file, sep='\t', index=False, header=False)
-    
+
                     logging.info('Found and collapsed {} related clusters.'.format(len(set(collapsee))))
-    
+
                     #update cluster information
                     remove_ids = [int(x.split('ID_')[-1].split('_')[0]) for x in collapsee]
                     new_ids = [int(x.split('ID_')[-1].split('_')[0]) for x in collapsed_into]
-    
+
                     re_id = dict(zip(remove_ids, new_ids))
-    
+
                     cluster_contigs_info['Cluster_ID']  = cluster_contigs_info['Cluster_ID'].\
                         apply(lambda x: 'Collapsed into {}'.format(re_id[int(x)]) if int(x) in re_id.keys() else x)
                     cluster_information = cluster_information[~cluster_information['ID'].isin(remove_ids)]
-    
+
                     #append_to_leftovercontigs = cluster_contigs_info[cluster_contigs_info['Cluster_ID'].isin(remove_ids)].copy()
                     #cluster_contigs_info = cluster_contigs_info[~cluster_contigs_info['Cluster_ID'].isin(remove_ids)]
                     #append_to_leftovercontigs['Cluster_ID'] = new_ids
                     #cluster_contigs_info = pd.concat([cluster_contigs_info, append_to_leftovercontigs])
-    
-    
+
+
                 # elif len(paf[paf['ARshort'] > ARcutoff]) != len(sel):
                     # Is there a difference between mapping well with low ANI and mapping decently with low ANI?
-    
+
+        # After collapsing related clusters, remove those that were previously filtered out
+
+        #to_remove = cluster_information[cluster_information['ID'].isin(filteredout)]
+        all_cluster_files = [f for f in listdir(cluster_folder) if f.endswith('.fna')]
+        all_cluster_files = [os.path.join(cluster_folder, x) for x in all_cluster_files]
+
+        tmp = {}
+        for clust in all_cluster_files:
+            id = int(clust.split('_ID_')[-1].split('_')[0])
+            tmp[id] = clust
+
+        to_remove = {k: tmp[k] for k in filteredout if k in tmp.keys()}
+
+        for clust in to_remove.values():
+            try:
+                os.remove(clust)
+            except FileNotFoundError:
+                #may have been removed
+                continue
+        logging.info('Removed an additional {} clusters based on tightness and mean cutoffs.'.format(len(to_remove)))
+
+        #update info
+        cluster_information = cluster_information[~cluster_information['ID'].isin(filteredout)]
+        new_remove_contigs = cluster_contigs_info['Cluster_ID'].isin(filteredout).copy()
+        cluster_contigs_info = cluster_contigs_info[~cluster_contigs_info['Cluster_ID'].isin(filteredout)]
+        leftover_contigs_info = pd.concat([leftover_contigs_info, new_remove_contigs])
 
         # Let's set a reasonable secondary cutoff and do FASTANI on clusters passing this.
 
@@ -768,13 +1030,18 @@ class WithinClusterMapper(Mapper):
 
         FASTANI_input = os.path.join(outdir, 'FASTANI.in')
         FASTANI_output = os.path.join(outdir, 'FASTANI.out')
+
+        #all_cluster_files = [f for f in listdir(cluster_folder) if f.endswith('.fna')]
+        #all_cluster_files = [os.path.join(cluster_folder, x) for x in all_cluster_files]
+
         pd.DataFrame({'Contigs': toanalyse}).to_csv(FASTANI_input, sep='\t', index=False, header=False)
 
 
+        #TODO: replace fragLen parameter with -m from main process
 
         try:
-            cmd = "fastANI -t {} --ql {} --rl {} -o {} > /dev/null 2> /dev/null" \
-                .format(self.nthreads, FASTANI_input, FASTANI_input, FASTANI_output)
+            cmd = "fastANI -t {} --ql {} --rl {} -o {} --fragLen 2500 --minFraction {} > /dev/null 2> /dev/null" \
+                .format(self.nthreads, FASTANI_input, FASTANI_input, FASTANI_output, DefaultValues.SECOND_PASS_CONTIGS_AR_SHORT_CUTOFF)
 
             logging.debug(cmd)
             subprocess.call(cmd, shell=True)
@@ -789,7 +1056,7 @@ class WithinClusterMapper(Mapper):
             fastANI_results = pd.read_csv(FASTANI_output, sep='\t', names=['Query', 'Ref', 'ANI', 'BlocksMatched', 'BlocksTotal'])
         except FileNotFoundError:
             logging.warning('fastANI failed to produce output. Assuming there are no related clusters.')
-            return cluster_information, cluster_contigs_info, leftover_contigs_info, None, None
+            return cluster_information, cluster_contigs_info, leftover_contigs_info, None
 
         os.remove(FASTANI_output)
 
@@ -806,6 +1073,86 @@ class WithinClusterMapper(Mapper):
                                               axis=1)
         fastANI_results = fastANI_results.drop_duplicates('check_string')
 
+        ''' Potential module to dereplicate circular clusters of similar size. Unclear if fastANI is reliable enough - not implemented for now 
+        
+        START UNIMPLEMENTED MODULE
+
+        if not keep_related:
+            # Update collapsed clusters from fastANI - this will catch circular alignments not parsed through yet 
+            circular_aligns = fastANI_results[fastANI_results['ANI'] > DefaultValues.CIRCULAR_ANI_INCLUDING_CUTOFF].copy()
+            circular_aligns['Circ1'] = circular_aligns['Query'].apply(lambda x: x.split('_')[0])
+            circular_aligns['Circ2'] = circular_aligns['Ref'].apply(lambda x: x.split('_')[0])
+
+            circular_aligns = circular_aligns[(circular_aligns['Circ1'] == 'Circular') | (circular_aligns['Circ2'] == 'Circular')]
+
+            if len(circular_aligns) > 0:
+
+                collapsee = []
+                collapsed_into = []
+                direction = []
+
+                # we've generated some valid, circular alignments above threshold
+                # we can iterate through and update everything
+                def identify_shorter_longer(x, y, structure_x, structure_y):
+                    lenx = int(x.split('_Size_')[-1].split('.')[0])
+                    leny = int(y.split('_Size_')[-1].split('.')[0])
+
+                    if lenx > leny:
+                        # if we are trying to collapse a slightly shorter (up to 15%) circular into a slightly longer imperfect,
+                        # do the reverse
+
+                        if structure_x == 'Circular' and structure_y == 'Imperfect' and leny/lenx > 0.85:
+                            return x, y
+                        else:
+                            return y, x
+                    else:
+                        if structure_y == 'Circular' and structure_x == 'Imperfect' and lenx/leny > 0.85:
+                            return y, x
+                        else:
+                            return x, y
+
+                circular_aligns[['Shorter', 'Longer']] = circular_aligns.apply(lambda row: identify_shorter_longer(row['Query'], row['Ref'], row['Circ2'], row['Circ1']),
+                                                                               axis=1, result_type="expand")
+                circular_aligns.reset_index(drop=True, inplace=True)
+                for index, row in circular_aligns.iterrows():
+                    shorter = circular_aligns.at[index, 'Shorter']
+                    longer = circular_aligns.at[index, 'Longer']
+
+
+                    logging.debug('Collapsing Circular clusters based on ANI: {} --> {}'.format(shorter, longer))
+
+                    try:
+                        os.remove(os.path.join(cluster_folder, shorter + '.fna'))
+                    except FileNotFoundError:
+                        continue #we may have already removed it before this stage.
+                        #logging.error('File not found during circular ANI collapse: {}. Unable to continue.'.format(
+                        #    os.path.join(cluster_folder, shorter + '.fna')))
+                        #sys.exit(1)
+                    collapsee.append(shorter)
+                    collapsed_into.append(longer)
+                    direction.append('-->')
+
+                collapsed_log = pd.DataFrame({'Collapsee': collapsee, 'Direction': direction, 'Collapsed_Into': collapsed_into})
+                collapsed_log_file = os.path.join(outdir, DefaultValues.COLLAPSED_LOG_FILE)
+                # append to existing collapsed log file
+                collapsed_log.to_csv(collapsed_log_file, sep='\t', index=False, header=False, mode='a' )
+
+                logging.info('Found and collapsed {} related circular clusters based on ANI.'.format(len(set(collapsee))))
+
+                # update cluster information
+                remove_ids = [int(x.split('ID_')[-1].split('_')[0]) for x in collapsee]
+                new_ids = [int(x.split('ID_')[-1].split('_')[0]) for x in collapsed_into]
+
+                re_id = dict(zip(remove_ids, new_ids))
+
+                cluster_contigs_info['Cluster_ID'] = cluster_contigs_info['Cluster_ID']. \
+                    apply(lambda x: 'Collapsed into {}'.format(re_id[int(x)]) if (isinstance(x, int) and int(x) in re_id.keys()) else x)
+                cluster_information = cluster_information[~cluster_information['ID'].isin(remove_ids)]
+            del circular_aligns
+
+        END UNIMPLEMENTED MODULE
+        
+        '''
 
         #final_fastANI_out = os.path.join(outdir, 'clusters_relatedness.tsv')
 
@@ -816,14 +1163,14 @@ class WithinClusterMapper(Mapper):
         G = nx.from_pandas_edgelist(fastANI_results, source='Query', target='Ref', edge_attr='ANI')
 
         # Build adjacency matrix
-        ANI_adjacency_df = pd.DataFrame(
-            nx.adjacency_matrix(G, weight='ANI').todense(),
-            index=G.nodes,
-            columns=G.nodes,
-            dtype=float  # Compatible dtype with NaN is needed
-        )
-        # Overwrite the values on the diagonal
-        np.fill_diagonal(ANI_adjacency_df.values, np.NaN)
+        # ANI_adjacency_df = pd.DataFrame(
+        #     nx.adjacency_matrix(G, weight='ANI').todense(),
+        #     index=G.nodes,
+        #     columns=G.nodes,
+        #     dtype=float  # Compatible dtype with NaN is needed
+        # )
+        # # Overwrite the values on the diagonal
+        #np.fill_diagonal(ANI_adjacency_df.values, np.NaN)
 
         ANI_defined_groups = (list(G.subgraph(c) for c in nx.connected_components(G)))
 
@@ -837,5 +1184,5 @@ class WithinClusterMapper(Mapper):
 
         #todo: generate output (ANI and dendrogram) for EACH GROUP
 
-        return cluster_information, cluster_contigs_info, leftover_contigs_info, fastANI_results[['Query', 'Ref', 'ANI']], ANI_adjacency_df
+        return cluster_information, cluster_contigs_info, leftover_contigs_info, fastANI_results[['Query', 'Ref', 'ANI']]
 
