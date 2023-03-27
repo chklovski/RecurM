@@ -38,6 +38,9 @@ class Clusterer():
             self.results_dir = os.path.join(self.outdir, DefaultValues.RESULTS_DIR)
             fileManager.make_sure_path_exists(self.results_dir)
 
+            self.collapse_dir = os.path.join(self.outdir, DefaultValues.COLLAPSE_DIR)
+            fileManager.make_sure_path_exists(self.collapse_dir)
+
             self.combined_assemblies = None
             self.existing_mapping_directory = None
         else:
@@ -169,10 +172,10 @@ class Clusterer():
         if self.collapse_against_assembly:
             logging.info('Removing any integrated clusters.')
             assembly_mapper = mapper.AssemblyMapper(self.nthreads)
-            assembly_mapped_contigs = assembly_mapper.map_clusters_against_assembly(cluster_folder, master_assembly, self.outdir)
+            assembly_mapped_contigs = assembly_mapper.map_clusters_against_assembly(cluster_folder, master_assembly, self.outdir, self.collapse_dir, self.minlen)
 
             cluster_information, cluster_contigs_info, \
-                = assembly_mapper.remove_mapped_clusters(assembly_mapped_contigs, cluster_folder,
+                = assembly_mapper.remove_mapped_clusters(self.nthreads, assembly_mapped_contigs, cluster_folder,
                                                           DefaultValues.FIRST_PASS_AVA_LR_CUTOFF,
                                                           DefaultValues.FIRST_PASS_AVA_AR_CUTOFF,
                                                           DefaultValues.FIRST_PASS_AVA_ANI_CUTOFF,

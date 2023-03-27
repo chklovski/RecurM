@@ -11,6 +11,8 @@ class DefaultValues():
     CIRCULAR_ALIGNMENTS_NAME = 'circular_alignments.passed'
     HASH_FILE_NAME = 'combined_hash_data.hash'
 
+    COLLAPSE_MAPPING_NAME = 'ava_collapse_alignments'
+
     COMBINED_CONTIGS_FILE = 'combined_contigs_ref.fasta'
     COMBINED_CONTIGS_MAPPING_FILE = 'combined_ref_map.paf'
 
@@ -22,6 +24,8 @@ class DefaultValues():
     ALIGNMENT_DIR = 'alignment_data'
     HASHING_DIR = 'hashing_data'
     RESULTS_DIR = 'results'
+    COLLAPSE_DIR = 'collapse_mapping'
+
 
     CONTIG_SIZE_BINS = 100
     DEFAULT_MIN_BIN_SIZE = 20000

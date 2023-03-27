@@ -160,7 +160,7 @@ class AllVsAllMapper(Mapper):
             logging.error('An error occured while running Minimap2: {}'.format(e))
             sys.exit(1)
 
-        return [os.path.join(map_outdir, mapping_file) for mapping_file in listdir(map_outdir)if mapping_file.endswith('.paf')]
+        return [os.path.join(map_outdir, mapping_file) for mapping_file in listdir(map_outdir) if mapping_file.endswith('.paf')]
 
 
 
@@ -707,7 +707,7 @@ class ReferenceMapper(Mapper):
 
 
 class AssemblyMapper(Mapper):
-    def map_clusters_against_assembly(self, cluster_folder, assembly_file, outdir):
+    def map_clusters_against_assembly(self, cluster_folder, assembly_file, outdir, collapsedir, min_contig_len):
 
 
         all_contigs = fileManager.list_assembly_folder(cluster_folder, '.fna')
@@ -730,11 +730,18 @@ class AssemblyMapper(Mapper):
                         sys.exit(1)
 
 
-        mapping_output = '{}/{}'.format(outdir, DefaultValues.ASSEMBLY_DEREP_FILE)
+        #mapping_output = '{}/{}'.format(outdir, DefaultValues.ASSEMBLY_DEREP_FILE)
 
         try:
-            cmd = "minimap2 -x ava-ont -t {} {} {} --dual=yes -v1 > {}" \
-                .format(self.nthreads, combined_contig_file, assembly_file, mapping_output)
+
+            #old cmd - check if dual is needed
+#            cmd = "minimap2 -x ava-ont -t {} {} {} --dual=yes -v1 > {}" \
+#                .format(self.nthreads, combined_contig_file, assembly_file, mapping_output)
+            mapping_out = os.path.join(collapsedir, DefaultValues.COLLAPSE_MAPPING_NAME)
+
+            cmd = "minimap2 -x ava-ont -m {} -K 5G -I 20G -2 -t {} {} {} --dual=yes -v1 | split --additional-suffix=.paf -d --line-bytes={} - {}" \
+                .format(min_contig_len * 0.7, self.nthreads, combined_contig_file, assembly_file, DefaultValues.PAF_CHUNK_SIZE,
+                        mapping_out)
 
             logging.debug(cmd)
             subprocess.call(cmd, shell=True)
@@ -743,99 +750,178 @@ class AssemblyMapper(Mapper):
             logging.error('An error occured while running Minimap2: {}'.format(e))
             sys.exit(1)
 
-        return mapping_output
+       #return mapping_output
+        return [os.path.join(outdir, collapsedir, mapping_file) for mapping_file in listdir(collapsedir) if
+            mapping_file.endswith('.paf')]
 
-    def remove_mapped_clusters(self, assembly_mapped_contigs, cluster_folder,
-                               LRcutoff, ARcutoff, ANIcutoff, outdir,
-                               cluster_info, cluster_contigs_info):
+
+
+
+    def remove_mapped_clusters(self, threads, paf_list, cluster_folder,
+                                   LRcutoff, ARcutoff, ANIcutoff, outdir,
+                                   cluster_info, cluster_contigs_info):
 
         #currently holding everything in memory, we should chunk and only keep good matches
 
         assembly_file_len = 0
         concat_df = []
 
-        try:
-            with open(assembly_mapped_contigs) as f:
-                assembly_file_len = sum(1 for line in f)
+        # try:
+        #     with open(assembly_mapped_contigs) as f:
+        #         assembly_file_len = sum(1 for line in f)
+        #
+        # except:
+        #     logging.info('Not collapsing clusters against assembly as no valid mapping was generated.')
+        #     return cluster_information, cluster_contigs_info
 
-        except:
-            logging.info('Not collapsing clusters against assembly as no valid mapping was generated.')
-            return cluster_information, cluster_contigs_info
-
-        if assembly_file_len < 2:
+        if len(paf_list) < 1:
             logging.info('Not collapsing clusters against assembly as no valid mapping was generated.')
             return cluster_information, cluster_contigs_info
 
         else:
-            chunksize = DefaultValues.FILTER_CHUNKSIZE
-            count = 0
 
-            for chunk in pd.read_csv(assembly_mapped_contigs,
-                             names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
-                             sep='\t', chunksize=chunksize):
+            # read in pafs and process them with multiple threads
 
-                #remove self-alignment
+            threads_per_bin = max(1, int(threads / len(paf_list)))
+            logging.debug('Processing alignment data.')
+            logging.info("Alignment data of contig vs assembly is split into {} chunks. Analysing with {} threads:"
+                         .format(len(paf_list), threads))
+
+            concat_df = mp.Manager().list()
+
+            # process each bin in parallel
+            workerQueue = mp.Queue()
+            writerQueue = mp.Queue()
+
+            for paf in paf_list:
+                workerQueue.put(paf)
+
+            for _ in range(threads):
+                workerQueue.put(None)
+
+            try:
+                calcProc = []
+                for _ in range(threads):
+                    calcProc.append(
+                        mp.Process(target=self.__set_up_collapse_thread, args=(
+                        workerQueue, writerQueue, concat_df, DefaultValues.FILTER_CHUNKSIZE, outdir, LRcutoff, ARcutoff, ANIcutoff)))
+                writeProc = mp.Process(target=self.__report_progress_paf, args=(len(paf_list), writerQueue))
+
+                writeProc.start()
+
+                for p in calcProc:
+                    p.start()
+
+                for p in calcProc:
+                    p.join()
+
+                writerQueue.put((None, None))
+                writeProc.join()
+
+            except:
+                # make sure all processes are terminated
+                for p in calcProc:
+                    p.terminate()
+
+                writeProc.terminate()
+
+
+            # From here - as before
+
+            if len(concat_df) > 0:
+                paf = pd.concat(concat_df)
+
+                paf['ID'] = paf[6].apply(lambda x: x.split('_ID_')[-1].split('_')[0])
+                cluster_contig_connection = dict(zip(paf['ID'], paf[1]))
+
+
+                clusters_to_remove = paf[6].unique()
+
+
+                cluster_names_to_remove = [x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0] for x in clusters_to_remove]
+                ids_to_remove = [x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0].split('_ID_')[-1].split('_')[0] for x in cluster_names_to_remove]
+
+                before_removal = len(cluster_info)
+                removed_cluster_info = cluster_info[cluster_info['ID'].isin(ids_to_remove)]
+                cluster_info = cluster_info[~cluster_info['ID'].isin(ids_to_remove)]
+                after_removal = len(cluster_info)
+
+                logging.info(f'Removed {before_removal - after_removal} clusters that were part of longer assembled contigs.')
+
+
+                removed_cluster_info['Mapped_to_contig'] = removed_cluster_info['ID'].apply(lambda x: cluster_contig_connection[str(x)])
+
+                for id in cluster_names_to_remove:
+                    file = os.path.join(cluster_folder, id + '.fna')
+                    os.remove(file)
+
+                removed_cluster_info.to_csv(os.path.join(outdir, 'removed_integrated_clusters.tsv'), sep='\t', index=False)
+
+                return cluster_info, cluster_contigs_info
+
+            else:
+                logging.info('No clusters were found to be integrated into a contig.')
+                return cluster_info, cluster_contigs_info
+
+
+    def __set_up_collapse_thread(self, queue_in, queue_out, align_list, chunksize, outdir, LRcutoff, ARcutoff, ANIcutoff):
+
+        while True:
+            paf = queue_in.get(block=True, timeout=None)
+            if paf == None:
+                break
+
+            #paf_path = os.path.join(outdir, DefaultValues.COLLAPSE_DIR, paf)
+
+            concat_df = []
+
+            for chunk in pd.read_csv(paf,
+                                     names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+                                     sep='\t', chunksize=chunksize):
+                # remove self-alignment
                 chunk = chunk[chunk[1] != chunk[6]]
 
                 chunk['ANI'] = chunk.apply(lambda row: self.calcANI(row[2], row[7], row[11], row[10]), axis=1)
                 chunk['ARshortContig'] = (chunk[9] - chunk[8]) / chunk[7]
 
                 chunk['AssembledContigLonger'] = chunk.apply(lambda row: 'YES' if \
-                    float(row[2]) > float(row[7] + row[7] * DefaultValues.ASSEMBLY_DEREP_CONTIG_PERCENT_LONGER) else 'NO', axis=1)
+                    float(row[2]) > float(
+                        row[7] + row[7] * DefaultValues.ASSEMBLY_DEREP_CONTIG_PERCENT_LONGER) else 'NO', axis=1)
 
                 chunk = chunk[chunk['AssembledContigLonger'] == 'YES']
                 chunk = chunk[chunk['ANI'] > ANIcutoff]
                 chunk = chunk[chunk['ARshortContig'] > ARcutoff]
 
-
-                if logging.root.level == logging.INFO or logging.root.level == logging.DEBUG:
-                    statusStr = '    Finished processing %d of %d (%.2f%%) assembly alignment chunks.' % (
-                        count, assembly_file_len, float(assembly_file_len) * 100 / assembly_file_len)
-                    sys.stdout.write('\r{}'.format(statusStr))
-                    sys.stdout.flush()
-                count += chunksize
-
                 if len(chunk) > 0:
                     concat_df.append(chunk)
 
-        if logging.root.level == logging.INFO or logging.root.level == logging.DEBUG:
-            sys.stdout.write('\n')
+            concat_df = pd.concat(concat_df)
 
-        if len(concat_df) > 0:
-            paf = pd.concat(concat_df)
+            align_list.append(concat_df)
 
-            paf['ID'] = paf[6].apply(lambda x: x.split('_ID_')[-1].split('_')[0])
-            cluster_contig_connection = dict(zip(paf['ID'], paf[1]))
+            queue_out.put(paf)
 
 
-            clusters_to_remove = paf[6].unique()
+    def __report_progress_paf(self, total_pafs, queueIn):
+        """Report number of processed bins."""
 
+        processed = 0
 
-            cluster_names_to_remove = [x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0] for x in clusters_to_remove]
-            ids_to_remove = [x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0].split('_ID_')[-1].split('_')[0] for x in cluster_names_to_remove]
+        while True:
+            paf = queueIn.get(block=True, timeout=None)
+            if paf[0] == None:
+                if logging.root.level == logging.INFO or logging.root.level == logging.DEBUG:
+                    sys.stdout.write('\n')
+                    sys.stdout.flush()
+                break
 
-            before_removal = len(cluster_info)
-            removed_cluster_info = cluster_info[cluster_info['ID'].isin(ids_to_remove)]
-            cluster_info = cluster_info[~cluster_info['ID'].isin(ids_to_remove)]
-            after_removal = len(cluster_info)
+            processed += 1
 
-            logging.info(f'Removed {before_removal - after_removal} clusters that were part of longer assembled contigs.')
-
-
-            removed_cluster_info['Mapped_to_contig'] = removed_cluster_info['ID'].apply(lambda x: cluster_contig_connection[str(x)])
-
-            for id in cluster_names_to_remove:
-                file = os.path.join(cluster_folder, id + '.fna')
-                os.remove(file)
-
-            removed_cluster_info.to_csv(os.path.join(outdir, 'removed_integrated_clusters.tsv'), sep='\t', index=False)
-
-            return cluster_info, cluster_contigs_info
-        else:
-            logging.info('No clusters were found to be integrated into a contig.')
-            return cluster_info, cluster_contigs_info
-
-
+            if logging.root.level == logging.INFO or logging.root.level == logging.DEBUG:
+                statusStr = '    Finished processing %d of %d (%.2f%%) paf alignment chunks.' % (
+                    processed, total_pafs, float(processed) * 100 / total_pafs)
+                sys.stdout.write('\r{}'.format(statusStr))
+                sys.stdout.flush()
 
 class WithinClusterMapper(Mapper):
 
