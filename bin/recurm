@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 __author__ = "Alex Chklovski"
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 __maintainer__ = "Alex Chklovski"
 __email__ = "chklovski near gmail.com"
 __status__ = "Development"
@@ -158,7 +158,9 @@ if __name__ == '__main__':
         combined_chunk_contigs = os.path.join(args.output, DefaultValues.EXTRACTED_CHUNK_CONTIGS_FILE)
 
         for idx, entry in enumerate(combined_assemblies_list):
-            logging.info('Aligning contigs from chunk {} out of {}'.format(idx+1, len(combined_assemblies_list)))
+            logging.info('Aligning contigs from chunk {} out of {}: {}'.format(idx+1,
+                                                                               len(combined_assemblies_list),
+                                                                               str(entry).split('/')[-1]))
 
             clust_process = clusterer.Clusterer(args.min_contig_len, args.min_cluster_size, args.threads,
                                             os.path.abspath(os.path.dirname(entry)), args.extension, args.force, args.resume,

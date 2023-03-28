@@ -109,7 +109,16 @@ class Clusterer():
             logging.info('\tCluster alignment tightness: \t\tMore than {}'.format(DefaultValues.TIGHTNESS_CLUSTER_CUTOFF))
             logging.info('')
 
-        hashfile, filteredfile = AVA_mapper.subfilter_paf_mapping_results(self.nthreads,
+
+        if len(paf_alignment_list) < 1:
+            if is_chunk:
+                return
+            else:
+                logging.error('ERROR: No alignment files were generated. Consider adding more metagenomes to RecurM input. Exiting.')
+                sys.exit(1)
+
+
+        hashfile, filteredfile, hash_success = AVA_mapper.subfilter_paf_mapping_results(self.nthreads,
                                                  paf_alignment_list,
                                                  self.alignment_dir,
                                                  self.hashing_dir,
@@ -117,6 +126,13 @@ class Clusterer():
                                                  DefaultValues.FIRST_PASS_AVA_LR_CUTOFF,
                                                  DefaultValues.FIRST_PASS_AVA_AR_CUTOFF,
                                                  DefaultValues.FIRST_PASS_AVA_ANI_CUTOFF)
+
+        if not hash_success:
+            if is_chunk:
+                return
+            else:
+                logging.error('ERROR: No valid hash files were generated. Consider adding more metagenomes to RecurM input. Exiting.')
+                sys.exit(1)
 
         if not is_chunk:
             logging.info('Sorting extracted hashes with {} threads'.format(self.nthreads))

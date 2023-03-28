@@ -270,8 +270,11 @@ class AllVsAllMapper(Mapper):
 
         ''' Done processing sample '''
 
-        extracted_paf_alignments = pd.concat(processed_multialignment_dfs)
-        extracted_paf_alignments.reset_index(drop=True, inplace=True)
+        if len(processed_multialignment_dfs) > 0:
+            extracted_paf_alignments = pd.concat(processed_multialignment_dfs)
+            extracted_paf_alignments.reset_index(drop=True, inplace=True)
+        else:
+            return False
 
 
         extracted_aligns = extracted_paf_alignments[extracted_paf_alignments['HashCount'] == 2].copy()
@@ -522,12 +525,23 @@ class AllVsAllMapper(Mapper):
 
             writeProc.terminate()
 
+        if len(os.listdir(hash_dir)) == 0:
+            full_hash_file = os.path.join(hash_dir, DefaultValues.HASH_FILE_NAME)
+            full_passed_file = os.path.join(align_dir, DefaultValues.SECOND_PASS_NAME)
+            hash_success = False
+            logging.info('No hash files generated.')
+
+            return full_hash_file, full_passed_file, hash_success
 
 
         full_hash_file = os.path.join(hash_dir, DefaultValues.HASH_FILE_NAME)
         full_passed_file = os.path.join(align_dir, DefaultValues.SECOND_PASS_NAME)
 
         logging.debug('Merging hash files and alignments kept after first pass.')
+
+
+
+
         try:
             #TODO: There has got to be a better way of doing this...
             cmd = "for i in {0}/*.hash; do awk '{{print $0 @\\t@ FILENAME;}}' $i >> {1}/{2}; rm $i; done"\
@@ -542,11 +556,13 @@ class AllVsAllMapper(Mapper):
 
             logging.debug('Finished concatenating hashes using awk and cat')
 
+            hash_success = True
+
         except Exception as e:
             logging.error('An error occured while concatenating hashes and extracted alignments: {}'.format(e))
             sys.exit(1)
 
-        return full_hash_file, full_passed_file
+        return full_hash_file, full_passed_file, hash_success
 
 
 
@@ -895,9 +911,9 @@ class AssemblyMapper(Mapper):
                 if len(chunk) > 0:
                     concat_df.append(chunk)
 
-            concat_df = pd.concat(concat_df)
-
-            align_list.append(concat_df)
+            if len(concat_df) > 0:
+                concat_df = pd.concat(concat_df)
+                align_list.append(concat_df)
 
             queue_out.put(paf)
 
@@ -986,6 +1002,7 @@ class WithinClusterMapper(Mapper):
             print(e)
             logging.info('Not collapsing clusters as no valid mapping was generated.')
             keep_related = True
+            return cluster_information, cluster_contigs_info, leftover_contigs_info, None
 
         collapsee = []
 
