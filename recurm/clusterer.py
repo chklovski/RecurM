@@ -41,6 +41,9 @@ class Clusterer():
             self.collapse_dir = os.path.join(self.outdir, DefaultValues.COLLAPSE_DIR)
             fileManager.make_sure_path_exists(self.collapse_dir)
 
+            self.multialign_dir = os.path.join(self.outdir, DefaultValues.MULTIALIGN_DIR)
+            fileManager.make_sure_path_exists(self.multialign_dir)
+
             self.combined_assemblies = None
             self.existing_mapping_directory = None
         else:
@@ -146,7 +149,7 @@ class Clusterer():
         #sort to pop off by sample
         fileManager.bash_sort_file(hashes_extracted_file, 3, self.outdir, self.nthreads, numerical=False)
 
-        circular_success = AVA_mapper.read_hashes_and_process_alignments(self.mapping_dir,
+        circular_success = AVA_mapper.read_hashes_and_process_alignments(self.multialign_dir, self.mapping_dir,
                                                       hashes_extracted_file,
                                                       DefaultValues.FIRST_PASS_AVA_LR_CUTOFF,
                                                       DefaultValues.FIRST_PASS_AVA_AR_CUTOFF,

@@ -23,8 +23,11 @@ class DefaultValues():
     MAPPING_DIR = 'mapping_data'
     ALIGNMENT_DIR = 'alignment_data'
     HASHING_DIR = 'hashing_data'
+    MULTIALIGN_DIR = 'multialign_data'
     RESULTS_DIR = 'results'
     COLLAPSE_DIR = 'collapse_mapping'
+
+
 
 
     CONTIG_SIZE_BINS = 100

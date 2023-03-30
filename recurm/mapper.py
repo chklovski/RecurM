@@ -3,6 +3,7 @@ import logging
 import subprocess
 import os
 from os import listdir
+import pickle
 
 #set numpy to use a single thread
 os.environ["NUMEXPR_MAX_THREADS"] = '1'
@@ -164,10 +165,12 @@ class AllVsAllMapper(Mapper):
 
 
 
-    def read_hashes_and_process_alignments(self, mapping_dir, hash_file, LRcutoff, ARcutoff, ANIcutoff, outfile, short_circular):
+    def read_hashes_and_process_alignments(self, multialign_dir, mapping_dir, hash_file, LRcutoff, ARcutoff, ANIcutoff, outfile, short_circular):
 
 
         use_short_circular = short_circular
+
+        hashfileindex = 1
 
         #read in hashes one by one;
 
@@ -209,9 +212,16 @@ class AllVsAllMapper(Mapper):
 
                         map_dict = dict(zip(dup_hashes['OriginalIndex'], dup_hashes['Hash']))
 
-                        hash_retrieve_params.append((paf, map_dict))
+                        hash_save_path = os.path.join(multialign_dir, f'{hashfileindex}.pkl')
+                        hashfileindex += 1
+
+                        hash_retrieve_params.append((hash_save_path))
+
+                        with open(hash_save_path, 'wb') as f:
+                            pickle.dump([paf, map_dict], f)
 
                         del dup_hashes
+                        del map_dict
 
                         index_buffer = []
                         hash_buffer = []
@@ -313,6 +323,8 @@ class AllVsAllMapper(Mapper):
 
         circular_labels = []
 
+        if len(extracted_aligns) < 2:
+            return False
 
 
         while index < len(extracted_aligns):
@@ -639,7 +651,11 @@ class AllVsAllMapper(Mapper):
             if idx == None:
                 break
 
-            paf, map_dict = param_list[idx]
+            link = param_list[idx]
+
+            with open(link, 'rb') as f:
+                paf, map_dict = pickle.load(f)
+
             keep_list = []
 
             chunksize = DefaultValues.FILTER_CHUNKSIZE
@@ -666,11 +682,6 @@ class AllVsAllMapper(Mapper):
             extracted_aligns = extracted_aligns.astype(
                 {2: 'int64', 3: 'int64', 4: 'int64', 7: 'int64', 8: 'int64', 9: 'int64', 10: 'int64', 11: 'int64'})
 
-            extracted_aligns['Hash'] = extracted_aligns.apply(lambda row: self.hashsum(row[1], row[6]),
-                                                                              axis=1)
-
-            hashdict = dict(extracted_aligns['Hash'].value_counts())
-            extracted_aligns['HashCount'] = extracted_aligns['Hash'].apply(lambda x: hashdict[x])
 
             extracted_aligns['AR'] = extracted_aligns.apply(
                 lambda row: self.calcAR(row[2], row[7], row[11], row[10]), axis=1)
@@ -680,17 +691,28 @@ class AllVsAllMapper(Mapper):
             extracted_aligns['ARshort'] = extracted_aligns.apply(
                 lambda row: self.calcARshort(row[2], row[7], row[11], row[10]), axis=1)
 
-            #extracted_aligns = extracted_aligns[extracted_aligns['ANI'] >= DefaultValues.FIRST_PASS_AVA_ANI_CUTOFF]
 
             # aligned ratio may be short, but length ratio should be at least one third when using ARshort
             # or default if not using rescue_short_circular
-            if use_short_circular:
-                extracted_aligns = extracted_aligns[extracted_aligns['LR'] >= 0.34]
-            else:
-                extracted_aligns = extracted_aligns[extracted_aligns['LR'] >= LRcutoff]
+
+            #if use_short_circular:
+            #    extracted_aligns = extracted_aligns[extracted_aligns['LR'] >= 0.34]
+            #else:
+            extracted_aligns = extracted_aligns[extracted_aligns['LR'] >= LRcutoff]
+
+            extracted_aligns = extracted_aligns[extracted_aligns['ANI'] >= DefaultValues.FIRST_PASS_AVA_ANI_CUTOFF]
 
 
-            align_list.append(extracted_aligns)
+            extracted_aligns['Hash'] = extracted_aligns.apply(lambda row: self.hashsum(row[1], row[6]),
+                                                                              axis=1)
+
+            hashdict = dict(extracted_aligns['Hash'].value_counts())
+            extracted_aligns['HashCount'] = extracted_aligns['Hash'].apply(lambda x: hashdict[x])
+
+            extracted_aligns = extracted_aligns[extracted_aligns['HashCount'] > 1]
+
+            if len(extracted_aligns) > 1:
+                align_list.append(extracted_aligns)
 
             queue_out.put([idx])
 
