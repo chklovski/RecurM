@@ -36,7 +36,7 @@ def bash_sort_file(file, column_loc, outdir, threads, numerical):
         numerical = 'n'
     try:
         sortedfile = '{}/TMP.hashes'.format(outdir)
-        cmd = "sort -t$'\\t' -k{} --parallel {} -{}r {} > {} && mv {} {}" \
+        cmd = "sort -k{} --parallel {} -{}r {} > {} && mv {} {}" \
             .format(column_loc, threads, numerical, file, sortedfile, sortedfile, file)
 
         logging.debug(cmd)

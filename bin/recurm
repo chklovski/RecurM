@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 __author__ = "Alex Chklovski"
-__version__ = "0.2.3"
+__version__ = "0.2.4"
 __maintainer__ = "Alex Chklovski"
 __email__ = "chklovski near gmail.com"
 __status__ = "Development"
@@ -192,6 +192,9 @@ if __name__ == '__main__':
 
                 logging.debug('Finished concatenating hashes using awk and cat')
 
+            folder = os.path.dirname(os.path.abspath(entry))
+            shutil.rmtree(folder)
+
 
         logging.info('Sorting resultant contig file.')
         cmd = "sort -u --parallel {} {} > {}_tmp && mv {}_tmp {}" \
@@ -200,9 +203,9 @@ if __name__ == '__main__':
         subprocess.call(cmd, shell=True)
 
         #remove folders
-        for folder in combined_assemblies_list:
-           folder = os.path.dirname(os.path.abspath(folder))
-           shutil.rmtree(folder)
+#        for folder in combined_assemblies_list:
+#           folder = os.path.dirname(os.path.abspath(folder))
+#           shutil.rmtree(folder)
 
         #make a new combined assemblies file from
         contigs_assembly_file = FASTA_manager.create_final_contigs_assembly(combined_chunk_contigs, master_assembly)

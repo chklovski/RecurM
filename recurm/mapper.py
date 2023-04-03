@@ -869,6 +869,8 @@ class AssemblyMapper(Mapper):
             if len(concat_df) > 0:
                 paf = pd.concat(concat_df)
 
+                cluster_info['ID'] = cluster_info['ID'].astype(int)
+
                 paf['ID'] = paf[6].apply(lambda x: x.split('_ID_')[-1].split('_')[0])
                 cluster_contig_connection = dict(zip(paf['ID'], paf[1]))
 
@@ -877,12 +879,13 @@ class AssemblyMapper(Mapper):
 
 
                 cluster_names_to_remove = [x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0] for x in clusters_to_remove]
-                ids_to_remove = [x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0].split('_ID_')[-1].split('_')[0] for x in cluster_names_to_remove]
+                ids_to_remove = [int(x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0].split('_ID_')[-1].split('_')[0]) for x in cluster_names_to_remove]
 
                 before_removal = len(cluster_info)
                 removed_cluster_info = cluster_info[cluster_info['ID'].isin(ids_to_remove)]
                 cluster_info = cluster_info[~cluster_info['ID'].isin(ids_to_remove)]
                 after_removal = len(cluster_info)
+
 
                 logging.info(f'Removed {before_removal - after_removal} clusters that were part of longer assembled contigs.')
 
