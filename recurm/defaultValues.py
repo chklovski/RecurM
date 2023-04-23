@@ -29,14 +29,15 @@ class DefaultValues():
 
 
 
-
     CONTIG_SIZE_BINS = 100
-    DEFAULT_MIN_BIN_SIZE = 20000
+    DEFAULT_MIN_BIN_SIZE = 8000
 
     SIZE_BIN_NAME = 'RECURM_SIZEBIN'
     MASTER_ASSEMBLY_FILE = 'MASTER_ASSEMBLY_FILE'
 
     EXTRACTED_CHUNK_CONTIGS_FILE = 'contigs_to_cluster.tsv'
+
+    EXTRACTED_CHUNK_ALIGNMENT_FILE = 'all_passed_alignments.paf'
 
     GRAPH_PICKLE_NAME = 'single_linkage_graph_data.graph'
 

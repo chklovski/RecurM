@@ -90,19 +90,20 @@ class Clusterer():
 
 
     def cluster_all_vs_all(self, combined_assemblies, master_assembly, is_chunk):
-        if self.existing_mapping_directory is None or self.combined_assemblies_file is None:
-            #logging.info('Concatenating all assemblies into master assembly file. Only contigs of length {} or more bp considered.'.format(self.minlen))
-            #combined_assemblies = FASTA_manager.setup_and_format_assemblies(self.minlen, self.input_list, self.outdir)
 
+        if is_chunk:
             AVA_mapper = mapper.AllVsAllMapper(self.nthreads)
             logging.info('Mapping all contigs against each other to identify putative clusters (warning: this can take a long time).')
             paf_alignment_list = AVA_mapper.mapAVA(combined_assemblies, self.mapping_dir, self.minlen)
+
         else:
             AVA_mapper = mapper.AllVsAllMapper(self.nthreads)
             combined_assemblies = os.path.abspath(combined_assemblies)
+            self.existing_mapping_directory = self.mapping_dir
             paf_alignment_list = [os.path.join(self.existing_mapping_directory, mapping_file) for mapping_file in listdir(self.existing_mapping_directory) if mapping_file.endswith('.paf')]
 
         if not is_chunk:
+
             logging.info('Hashing and filtering alignments based on following cut-offs:')
             logging.info('')
             logging.info('\tLength Ratio: \t\t\t\tMore than {}'.format(DefaultValues.FIRST_PASS_AVA_LR_CUTOFF))
@@ -113,52 +114,56 @@ class Clusterer():
             logging.info('')
 
 
-        if len(paf_alignment_list) < 1:
-            if is_chunk:
-                return
-            else:
-                logging.error('ERROR: No alignment files were generated. Consider adding more metagenomes to RecurM input. Exiting.')
-                sys.exit(1)
+        # if len(paf_alignment_list) < 1:
+        #     if is_chunk:
+        #         return
+        #     else:
+        #         logging.error('ERROR: No alignment files were generated. Consider adding more metagenomes to RecurM input. Exiting.')
+        #         sys.exit(1)
 
+        if is_chunk:
+            hashfile, filteredfile, hash_success = AVA_mapper.subfilter_paf_mapping_results(self.nthreads,
+                                                     paf_alignment_list,
+                                                     self.alignment_dir,
+                                                     self.hashing_dir,
+                                                     DefaultValues.FILTER_CHUNKSIZE,
+                                                     DefaultValues.FIRST_PASS_AVA_LR_CUTOFF,
+                                                     DefaultValues.FIRST_PASS_AVA_AR_CUTOFF,
+                                                     DefaultValues.FIRST_PASS_AVA_ANI_CUTOFF)
 
-        hashfile, filteredfile, hash_success = AVA_mapper.subfilter_paf_mapping_results(self.nthreads,
-                                                 paf_alignment_list,
-                                                 self.alignment_dir,
-                                                 self.hashing_dir,
-                                                 DefaultValues.FILTER_CHUNKSIZE,
-                                                 DefaultValues.FIRST_PASS_AVA_LR_CUTOFF,
-                                                 DefaultValues.FIRST_PASS_AVA_AR_CUTOFF,
-                                                 DefaultValues.FIRST_PASS_AVA_ANI_CUTOFF)
+            if not hash_success:
+                if is_chunk:
+                    return
+                else:
+                    logging.error('ERROR: No valid hash files were generated. Consider adding more metagenomes to RecurM input. Exiting.')
+                    sys.exit(1)
 
-        if not hash_success:
-            if is_chunk:
-                return
-            else:
-                logging.error('ERROR: No valid hash files were generated. Consider adding more metagenomes to RecurM input. Exiting.')
-                sys.exit(1)
-
-        if not is_chunk:
+        if is_chunk:
             logging.info('Sorting extracted hashes with {} threads'.format(self.nthreads))
+            fileManager.bash_sort_file(hashfile, 2, self.outdir, self.nthreads, numerical=True)
 
-        fileManager.bash_sort_file(hashfile, 2, self.outdir, self.nthreads, numerical=True)
-
-        if not is_chunk:
+        if is_chunk:
             logging.info('Identifying multiple alignments from hashes and extracting mappings.')
-        hashes_extracted_file = AVA_mapper.extract_hashes_with_multiple_hits(hashfile)
+            hashes_extracted_file = AVA_mapper.extract_hashes_with_multiple_hits(hashfile)
 
-        #sort to pop off by sample
-        fileManager.bash_sort_file(hashes_extracted_file, 3, self.outdir, self.nthreads, numerical=False)
+            #sort to pop off by sample
+            fileManager.bash_sort_file(hashes_extracted_file, 3, self.outdir, self.nthreads, numerical=False)
 
-        circular_success = AVA_mapper.read_hashes_and_process_alignments(self.multialign_dir, self.mapping_dir,
-                                                      hashes_extracted_file,
-                                                      DefaultValues.FIRST_PASS_AVA_LR_CUTOFF,
-                                                      DefaultValues.FIRST_PASS_AVA_AR_CUTOFF,
-                                                      DefaultValues.FIRST_PASS_AVA_ANI_CUTOFF,
-                                                      '{}/{}'.format(self.outdir, DefaultValues.CIRCULAR_ALIGNMENTS_NAME),
-                                                      self.use_short_circular)
+            circular_success = AVA_mapper.read_hashes_and_process_alignments(self.multialign_dir, self.mapping_dir,
+                                                          hashes_extracted_file,
+                                                          DefaultValues.FIRST_PASS_AVA_LR_CUTOFF,
+                                                          DefaultValues.FIRST_PASS_AVA_AR_CUTOFF,
+                                                          DefaultValues.FIRST_PASS_AVA_ANI_CUTOFF,
+                                                          '{}/{}'.format(self.outdir, DefaultValues.CIRCULAR_ALIGNMENTS_NAME),
+                                                          self.use_short_circular)
 
         if is_chunk:
             return
+
+        if os.path.isfile('{}/{}'.format(self.outdir, DefaultValues.CIRCULAR_ALIGNMENTS_NAME)):
+            circular_success = True
+        else:
+            circular_success = False
 
         logging.info('Drawing master graph from contig alignments.')
         graph_process = grapher.ClusterGraph(self.nthreads)

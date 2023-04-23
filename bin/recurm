@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 __author__ = "Alex Chklovski"
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 __maintainer__ = "Alex Chklovski"
 __email__ = "chklovski near gmail.com"
 __status__ = "Development"
@@ -157,6 +157,11 @@ if __name__ == '__main__':
 
         combined_chunk_contigs = os.path.join(args.output, DefaultValues.EXTRACTED_CHUNK_CONTIGS_FILE)
 
+        fileManager.make_sure_path_exists(os.path.join(args.output, DefaultValues.ALIGNMENT_DIR))
+
+        combined_linear_alignments = os.path.join(os.path.abspath(args.output), DefaultValues.ALIGNMENT_DIR, DefaultValues.SECOND_PASS_NAME)
+        combined_circular_alignments = os.path.join(os.path.abspath(args.output), DefaultValues.CIRCULAR_ALIGNMENTS_NAME)
+
         for idx, entry in enumerate(combined_assemblies_list):
 
             floor = str(entry).split('_')[-3]
@@ -179,12 +184,23 @@ if __name__ == '__main__':
             logging.info('Adding successfully aligned contigs to contig master file')
 
             if os.path.isfile(circ_file):
+
+                #get the contig names
                 cmd = "cut -f1 {} >> {}; cut -f6 {} >> {}" \
                     .format(circ_file, combined_chunk_contigs, circ_file, combined_chunk_contigs)
                 logging.debug(cmd)
                 subprocess.call(cmd, shell=True)
 
+                #get actual alignment
+                cmd = "cat {} >> {}" \
+                    .format(circ_file, combined_circular_alignments)
+                logging.debug(cmd)
+                subprocess.call(cmd, shell=True)
+
+
             if os.path.isfile(linear_file):
+
+                #get contig names
                 cmd = "cut -f2 {} >> {}; cut -f7 {} >> {}"\
                     .format(linear_file, combined_chunk_contigs, linear_file, combined_chunk_contigs)
                 logging.debug(cmd)
@@ -192,9 +208,20 @@ if __name__ == '__main__':
 
                 logging.debug('Finished concatenating hashes using awk and cat')
 
+                #get actual alignment
+                cmd = "cat {} >> {}" \
+                    .format(linear_file, combined_linear_alignments)
+                logging.debug(cmd)
+                subprocess.call(cmd, shell=True)
+
             folder = os.path.dirname(os.path.abspath(entry))
             shutil.rmtree(folder)
 
+
+        #remove folders
+#        for folder in combined_assemblies_list:
+#           folder = os.path.dirname(os.path.abspath(folder))
+#           shutil.rmtree(folder)
 
         logging.info('Sorting resultant contig file.')
         cmd = "sort -u --parallel {} {} > {}_tmp && mv {}_tmp {}" \
@@ -202,11 +229,8 @@ if __name__ == '__main__':
         logging.debug(cmd)
         subprocess.call(cmd, shell=True)
 
-        #remove folders
-#        for folder in combined_assemblies_list:
-#           folder = os.path.dirname(os.path.abspath(folder))
-#           shutil.rmtree(folder)
 
+        logging.info('Creating new assembly file with all contigs passing alignment thresholds.')
         #make a new combined assemblies file from
         contigs_assembly_file = FASTA_manager.create_final_contigs_assembly(combined_chunk_contigs, master_assembly)
 
@@ -215,6 +239,7 @@ if __name__ == '__main__':
                                             os.path.abspath(os.path.dirname(contigs_assembly_file)), args.extension, args.force,
                                             args.resume,
                                             args.keep_related, args.collapse_against_assembly)
+
 
         clust_process.cluster_all_vs_all(os.path.abspath(contigs_assembly_file), master_assembly, is_chunk=False)
 

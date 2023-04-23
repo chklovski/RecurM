@@ -603,7 +603,7 @@ class AllVsAllMapper(Mapper):
 
 
             df = pd.read_csv(paf, chunksize=chunksize,
-                             names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], sep='\t')
+                                 names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], sep='\t')
 
             index = 0
 
@@ -637,6 +637,7 @@ class AllVsAllMapper(Mapper):
                     chunk = chunk[chunk['AR'] > ARcutoff]
                     chunk = chunk[chunk['LR'] > LRcutoff]
                     chunk = chunk[chunk['ANI'] > ANIcutoff]
+
 
                     chunk[[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 'AR', 'LR', 'ANI']].to_csv(out_align, mode='a', sep='\t', header=False)
 
