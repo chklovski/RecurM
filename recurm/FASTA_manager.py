@@ -118,7 +118,7 @@ def determine_size_cutoffs(nthreads, assemblies, minlen, NUMBER_BINS):
             #we also want it to be at least 30% bigger than previous top size
             if (size > prevtop + prevtop * multiplier):
                 # we want to go 11% below that (extra 1% just in case on top of 90% length ratio prerequisite for chaining contigs in clusters)
-                prevsize = int(prevtop - prevtop * 0.10)
+                prevsize = int(prevtop - prevtop * 0.11)
                 final_size_bins.append((prevsize, size))
                 prevtop = size
 

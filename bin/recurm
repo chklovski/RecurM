@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 __author__ = "Alex Chklovski"
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 __maintainer__ = "Alex Chklovski"
 __email__ = "chklovski near gmail.com"
 __status__ = "Development"
@@ -100,6 +100,9 @@ if __name__ == '__main__':
     cluster_arguments.add_argument('--keep_related', action='store_true',
                                    help='Do not collapse highly related short clusters into long clusters at the end - keep all clusters [default: Collapse]', default=False)
 
+    cluster_arguments.add_argument('--fast', action='store_true',
+                                   help='Change minimap2 heuristics options to stop chaining early, avoiding quadratic runtimes - best for very large datasets (> 1000 assemblies) [default: False]', default=False)
+
     cluster_arguments.add_argument('--collapse_against_assembly', action='store_true',
                                    help='Collapse any shorter clusters into longer contigs (will discard integrated elements) [default: True]', default=False)
 
@@ -167,6 +170,7 @@ if __name__ == '__main__':
             floor = str(entry).split('_')[-3]
             ceiling = str(entry).split('_')[-2]
 
+            logging.info('')
             logging.info('Aligning contigs from chunk {} out of {}: [Min size: {}] [Max size: {}]'.format(idx+1,
                                                                                len(combined_assemblies_list),
                                                                                floor, ceiling))
@@ -175,7 +179,7 @@ if __name__ == '__main__':
                                             os.path.abspath(os.path.dirname(entry)), args.extension, args.force, args.resume,
                                             args.keep_related, args.collapse_against_assembly)
 
-            clust_process.cluster_all_vs_all(os.path.abspath(entry), master_assembly, is_chunk=True)
+            clust_process.cluster_all_vs_all(os.path.abspath(entry), master_assembly, args.fast, is_chunk=True)
 
             circ_file = os.path.join(os.path.dirname(entry), DefaultValues.CIRCULAR_ALIGNMENTS_NAME)
             linear_file = os.path.join(os.path.dirname(entry), DefaultValues.ALIGNMENT_DIR, DefaultValues.SECOND_PASS_NAME)
@@ -241,12 +245,8 @@ if __name__ == '__main__':
                                             args.keep_related, args.collapse_against_assembly)
 
 
-        clust_process.cluster_all_vs_all(os.path.abspath(contigs_assembly_file), master_assembly, is_chunk=False)
+        clust_process.cluster_all_vs_all(os.path.abspath(contigs_assembly_file), master_assembly, args.fast, is_chunk=False)
 
-
-
-
-#        clust_process.map_assemblies()
 
 
 

@@ -9,7 +9,10 @@ import subprocess
 
 def remove_intermediates(list_of_files):
     for entry in list_of_files:
-        os.remove(entry)
+        if os.path.isdir(entry):
+            shutil.rmtree(entry)
+        elif os.path.isfile(entry):
+            os.remove(entry)
 
 def list_assembly_folder(assembly_folder, ext):
     assembly_files = []

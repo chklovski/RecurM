@@ -136,7 +136,7 @@ class Mapper():
 class AllVsAllMapper(Mapper):
 
 
-    def mapAVA(self, combined_assemblies, map_outdir, min_contig_len):
+    def mapAVA(self, combined_assemblies, map_outdir, min_contig_len, fast):
         mapping_input = combined_assemblies
         mapping_out = os.path.join(map_outdir, DefaultValues.FIRST_PASS_MAPPING_NAME)
         # minimap2 options:
@@ -150,9 +150,12 @@ class AllVsAllMapper(Mapper):
 
 
             #m - min mapping length should be ~ 0.3/0.4 of min contig length to filter out tons of tiny useless alignments
-#            cmd = "minimap2 -x ava-ont -m {} -t {} {} {} -v1 | split --additional-suffix=.paf -d --line-bytes={} - {}" \
-            cmd = "minimap2 -k16  -Xw5 -m {}  -g1000 -r1000  --max-chain-skip 500 --max-chain-iter 1000 -K 5G -I 20G -2 -t {} {} {} -v1 | split --additional-suffix=.paf -d --line-bytes={} - {}" \
-                .format(min_contig_len * 0.4, self.nthreads, mapping_input, mapping_input, DefaultValues.PAF_CHUNK_SIZE, mapping_out)
+            if not fast:
+                cmd = "minimap2 -x ava-ont -m {} -t {} {} {} -v1 | split --additional-suffix=.paf -d --line-bytes={} - {}" \
+                    .format(min_contig_len * 0.3, self.nthreads, mapping_input, mapping_input, DefaultValues.PAF_CHUNK_SIZE, mapping_out)
+            else:
+                cmd = "minimap2 -k16  -Xw5 -m {} -g1000 -r1000  --max-chain-skip 500 --max-chain-iter 1000 -K 5G -I 20G -2 -t {} {} {} -v1 | split --additional-suffix=.paf -d --line-bytes={} - {}" \
+                    .format(min_contig_len * 0.3, self.nthreads, mapping_input, mapping_input, DefaultValues.PAF_CHUNK_SIZE, mapping_out)
 
             logging.debug(cmd)
             subprocess.call(cmd, shell=True)
@@ -1202,6 +1205,19 @@ class WithinClusterMapper(Mapper):
                                               axis=1)
         fastANI_results = fastANI_results.drop_duplicates('check_string')
 
+        #Assume ANI is meaningless if size difference is more than 50% between two sequences
+
+        fastANI_results['Size1'] = fastANI_results['Query'].apply(lambda x: x.split('_')[-1]).astype(int)
+        fastANI_results['Size2'] = fastANI_results['Ref'].apply(lambda x: x.split('_')[-1]).astype(int)
+        fastANI_results['Keep'] = fastANI_results.apply(lambda row: 'Yes' if max(row['Size1'], row['Size2']) <= min(row['Size1'], row['Size2']) * 1.5 else 'No', axis=1)
+
+        fastANI_results = fastANI_results[fastANI_results['Keep'] == 'Yes']
+
+        del fastANI_results['Size1']
+        del fastANI_results['Size2']
+        del fastANI_results['Keep']
+
+
         ''' Potential module to dereplicate circular clusters of similar size. Unclear if fastANI is reliable enough - not implemented for now 
         
         START UNIMPLEMENTED MODULE
@@ -1304,14 +1320,25 @@ class WithinClusterMapper(Mapper):
         ANI_defined_groups = (list(G.subgraph(c) for c in nx.connected_components(G)))
 
         group_dict = {}
+        average_ANI_dict = {}
+
         for idx, group in enumerate(ANI_defined_groups):
+            total_ANI = 0
+            num_edges = 0
             for entry in list(group):
                 id = int(entry.split('ID_')[-1].split('_')[0])
                 group_dict[id] = idx
+            for (node1, node2, data) in group.edges(data=True):
+                total_ANI += data['ANI']
+                num_edges += 1
+            average_ANI_dict[idx] = total_ANI / num_edges if num_edges > 0 else 0
 
         cluster_information['Group'] = cluster_information['ID'].apply(lambda x: 'Group_{}'.format(group_dict[x]) if x in group_dict.keys() else 'None')
+        cluster_information['Average_ANI'] = cluster_information['Group'].apply(
+            lambda x: average_ANI_dict[int(x.split('_')[-1])] if x != 'None' else None)
 
-        #todo: generate output (ANI and dendrogram) for EACH GROUP
+        #todo: generate output (ANI and dendrogram) for each group
+
 
         return cluster_information, cluster_contigs_info, leftover_contigs_info, fastANI_results[['Query', 'Ref', 'ANI']]
 

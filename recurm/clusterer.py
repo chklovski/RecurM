@@ -89,12 +89,12 @@ class Clusterer():
 
 
 
-    def cluster_all_vs_all(self, combined_assemblies, master_assembly, is_chunk):
+    def cluster_all_vs_all(self, combined_assemblies, master_assembly, fast, is_chunk):
 
         if is_chunk:
             AVA_mapper = mapper.AllVsAllMapper(self.nthreads)
             logging.info('Mapping all contigs against each other to identify putative clusters (warning: this can take a long time).')
-            paf_alignment_list = AVA_mapper.mapAVA(combined_assemblies, self.mapping_dir, self.minlen)
+            paf_alignment_list = AVA_mapper.mapAVA(combined_assemblies, self.mapping_dir, self.minlen, fast)
 
         else:
             AVA_mapper = mapper.AllVsAllMapper(self.nthreads)
@@ -211,13 +211,23 @@ class Clusterer():
 
         ''' DEBUGGING PURPOSES START'''
 
-        cluster_information['EDGE_OCCURENCES'] = cluster_information['ID'].apply(lambda x: x1[x])
-        cluster_information['TIGHTNESS'] = (cluster_information['EDGE_OCCURENCES'] + 1) / cluster_information['Total_Contigs']
-        cluster_information['SIZE_MEAN'] = cluster_information['ID'].apply(lambda x: x3[x])
-        cluster_information['SIZE_STD'] = cluster_information['ID'].apply(lambda x: x4[x])
-        cluster_information['SIZE_CLUSTER_DEVIATION'] = cluster_information['SIZE_STD'] / cluster_information['SIZE_MEAN']
+        #cluster_information['EDGE_OCCURENCES'] = cluster_information['ID'].apply(lambda x: x1[x])
+        #cluster_information['TIGHTNESS'] = (cluster_information['EDGE_OCCURENCES'] + 1) / cluster_information['Total_Contigs']
+        #cluster_information['SIZE_MEAN'] = cluster_information['ID'].apply(lambda x: x3[x])
+        #cluster_information['SIZE_STD'] = cluster_information['ID'].apply(lambda x: x4[x])
+        #cluster_information['SIZE_CLUSTER_DEVIATION'] = cluster_information['SIZE_STD'] / cluster_information['SIZE_MEAN']
+
+        #currently useless:
+        del cluster_information['Short_Circular_Count']
 
         ''' DEBUGGING PURPOSES END'''
+
+        #we may have removed some members of ANI groups, they should no longer be groups:
+
+        group_counts = cluster_information.groupby('Group')['ID'].transform('nunique')
+        mask = group_counts < 2
+        cluster_information.loc[mask, 'Group'] = 'None'
+        cluster_information.loc[mask, 'Average_ANI'] = None
 
         cluster_information.to_csv('{}/cluster_information.tsv'.format(self.results_dir), sep='\t', index=False)
         leftover_contigs_info.to_csv('{}/leftover_contigs_information.tsv'.format(self.results_dir), sep='\t', index=False)
@@ -243,12 +253,19 @@ class Clusterer():
 
 
         logging.info('Cleaning up intermediate files.')
-        # fileManager.remove_intermediates([hashfile,
-        #                                   combined_assemblies,
-        #                                   filteredfile,
-        #                                   paf_first_out,
-        #                                   '{}/{}'.format(self.outdir, DefaultValues.CIRCULAR_ALIGNMENTS_NAME),
-        #                                   hashes_extracted_file])
+
+        fileManager.remove_intermediates([combined_assemblies,
+                                          '{}/{}'.format(self.outdir, DefaultValues.CIRCULAR_ALIGNMENTS_NAME),
+                                          '{}/{}'.format(self.outdir, DefaultValues.HASHING_DIR),
+                                          '{}/{}'.format(self.outdir, DefaultValues.MULTIALIGN_DIR),
+                                          '{}/{}'.format(self.outdir, DefaultValues.COLLAPSE_DIR),
+                                          '{}/{}'.format(self.outdir, DefaultValues.MAPPING_DIR),
+                                          '{}/{}'.format(self.outdir, DefaultValues.ALIGNMENT_DIR),
+                                          '{}/{}'.format(self.outdir, DefaultValues.ASSEMBLY_DEREP_FILE),
+                                          '{}/{}'.format(self.outdir, DefaultValues.COMBINED_CONTIGS_MAPPING_FILE),
+                                          '{}/{}'.format(self.outdir, DefaultValues.COMBINED_CONTIGS_FILE),
+                                          '{}/{}'.format(self.outdir, DefaultValues.EXTRACTED_CHUNK_CONTIGS_FILE),
+                                          ])
 
 
 
