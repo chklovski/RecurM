@@ -60,7 +60,7 @@ If you have a huge input dataset (> 1,000 metagenomic assemblies) it is recommen
 
 RecurM puts out a 'clusters' folder, where each file is a FASTA sequence representative of the circular, linear or imperfect cluster. RecurM also outputs a 'results' folder with cluster information (cluster_information.tsv), as well as a full list of which contigs in which sample were found in which cluster cluster_contigs_information.tsv and a separate list of all unclustered contigs (leftover_contigs_information.tsv). 
 
-The cluster information file has the topology of the cluster ("Circular/Linear/Imperfect"), the number of contigs in the cluster ("Total_Contigs"), counts of edges within clusters for furhter information ("Circular_Count/Linear_Count/Imperfect_Count" - note that these will sum to higher than the number of contigs in the cluster, as they represent edges within the graph). 
+The cluster information file has the topology of the cluster ("Circular/Linear/Imperfect"), the number of contigs in the cluster ("Total_Contigs"), counts of edges within clusters for further information ("Circular_Count/Linear_Count/Imperfect_Count" - note that these will sum to higher than the number of contigs in the cluster, as they represent edges within the graph). 
 
 RecurM also uses fastANI to calculate if any clusters are related to each other, and puts that information in the 'Group' column, as well as the mean ANI between clusters in a given group ('Average_ANI' column). 
 
