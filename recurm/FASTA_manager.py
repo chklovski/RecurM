@@ -444,6 +444,107 @@ def write_clusters_to_file(initial_concat_assembly, outdir, graphs, infos):
 
 
 
+def concatenate_clusters(folder_1, folder_2, outputfolder):
+
+    fileManager.make_sure_path_exists(outputfolder)
+    master_assembly_file1 = '{}/1_{}'.format(outputfolder, DefaultValues.COMBINED_ASSEMBLY_NAME)
+    master_assembly_file2 = '{}/2_{}'.format(outputfolder, DefaultValues.COMBINED_ASSEMBLY_NAME)
+
+#    nucleotide_sequences = {}
+    processed_headers = {}
+    processed = 0
+
+    list1 = os.listdir('{}/clusters/'.format(folder_1))
+    list2 = os.listdir('{}/clusters/'.format(folder_2))
+
+    list1 = ['{}/clusters/{}'.format(folder_1, file) for file in list1 if file.endswith('.fna')]
+    list2 = ['{}/clusters/{}'.format(folder_2, file) for file in list2 if file.endswith('.fna')]
+
+
+    with open(master_assembly_file1, 'w') as fout:
+
+        processed = 0
+
+        for assembly in list1:
+            for name, seq, _ in readfq(open(assembly)):
+                try:
+                    seq_len = len(seq)
+                    basefile = os.path.splitext(os.path.basename(assembly))[0]
+                    header = '{}{}{}{}{}'.format(basefile, DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR, 'List1', DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR, name).split(' ', 1)[0]
+                    if header in processed_headers.keys():
+                        logging.error('Found duplicate header! Ensure your FASTA headers are unique.')
+                        sys.exit(1)
+                    processed_headers[header] = 1
+                    fout.write('>' + header + '\n')
+                    fout.write(seq + '\n')
+
+                except Exception as e:
+                    logging.error('Could not write combined assembly file: {}'.format(e))
+                    sys.exit(1)
+
+            processed += 1
+
+            if logging.root.level == logging.INFO or logging.root.level == logging.DEBUG:
+                statusStr = '    Finished processing %d of %d (%.2f%%) clusters in first RecurM output' % (
+                    processed, len(list1), float(processed) * 100 / len(list1))
+                sys.stdout.write('\r{}'.format(statusStr))
+
+                if processed == len(list1):
+                    if logging.root.level == logging.INFO or logging.root.level == logging.DEBUG:
+                        sys.stdout.write('\n')
+                        sys.stdout.flush()
+                else:
+                    sys.stdout.flush()
+
+        fout.close()
+
+    with open(master_assembly_file2, 'w') as fout:
+
+        processed = 0
+
+        for assembly in list2:
+            for name, seq, _ in readfq(open(assembly)):
+                try:
+                    seq_len = len(seq)
+                    basefile = os.path.splitext(os.path.basename(assembly))[0]
+                    header = '{}{}{}{}{}'.format(basefile, DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR, 'List2', DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR, name).split(' ', 1)[0]
+                    if header in processed_headers.keys():
+                        logging.error('Found duplicate header! Ensure your FASTA headers are unique.')
+                        sys.exit(1)
+                    processed_headers[header] = 1
+                    fout.write('>' + header + '\n')
+                    fout.write(seq + '\n')
+
+                except Exception as e:
+                    logging.error('Could not write combined assembly file: {}'.format(e))
+                    sys.exit(1)
+
+            processed += 1
+
+            if logging.root.level == logging.INFO or logging.root.level == logging.DEBUG:
+                statusStr = '    Finished processing %d of %d (%.2f%%) clusters in second RecurM output' % (
+                    processed, len(list2), float(processed) * 100 / len(list2))
+                sys.stdout.write('\r{}'.format(statusStr))
+
+                if processed == len(list2):
+                    if logging.root.level == logging.INFO or logging.root.level == logging.DEBUG:
+                        sys.stdout.write('\n')
+                        sys.stdout.flush()
+                else:
+                    sys.stdout.flush()
+
+
+        fout.close()
+
+    logging.info('Done processing RecurM output.')
+
+    return master_assembly_file1, master_assembly_file2
+
+
+
+
+
+
 def readfq(fp):  # this is a generator function
     last = None  # this is a buffer keeping the last unprocessed line
     while True:  # mimic closure; is it a bad idea?
@@ -492,3 +593,166 @@ def write_fasta(seq, outputFile):
         fout.write(seq + '\n')
     fout.close()
 
+def find_intersecting_clusters(run1_loc, run2_loc, map_results, outdir, strict):
+
+
+    shared_non_circular_counts = 0
+    shared_circular_counts = 0
+
+
+    results_list_1 = pd.read_csv(os.path.join(run1_loc, 'results', 'cluster_information.tsv'), sep='\t')
+    results_list_2 = pd.read_csv(os.path.join(run2_loc, 'results', 'cluster_information.tsv'), sep='\t')
+
+    cluster_out_folder = os.path.join(outdir, 'clusters')
+    fileManager.make_sure_path_exists(cluster_out_folder)
+
+    results_out_folder = os.path.join(outdir, 'results')
+    fileManager.make_sure_path_exists(results_out_folder)
+
+    shared_dict = dict()
+
+
+    #IDs to keep
+
+    loc1_ids = []
+    loc2_ids = []
+
+    for x in map_results[1].values:
+        cluster = x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0]
+        recurm_run = x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[1]
+        clustid = int(cluster.split('_cluster_ID_')[-1].split('_')[0])
+
+        shared_dict['{}_{}'.format(recurm_run, clustid)] = cluster
+
+    for x in map_results[6].values:
+        cluster = x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0]
+        recurm_run = x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[1]
+        clustid = int(cluster.split('_cluster_ID_')[-1].split('_')[0])
+
+        shared_dict['{}_{}'.format(recurm_run, clustid)] = cluster
+
+    #make lookup table to see which cluster in run1_loc maps to which cluster in run2_loc
+    map_results['ID_loc1'] = map_results.apply(lambda row: row[1].split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0].split('_cluster_ID_')[-1].split('_')[0] if row[1].split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[1] == 'List1' else row[6].split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0].split('_cluster_ID_')[-1].split('_')[0], axis=1).astype(int)
+    map_results['ID_loc2'] = map_results.apply(lambda row: row[1].split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0].split('_cluster_ID_')[-1].split('_')[0] if row[1].split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[1] == 'List2' else row[6].split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0].split('_cluster_ID_')[-1].split('_')[0], axis=1).astype(int)
+    cluster_id_1_to_clust_id_2 = dict(zip(map_results['ID_loc1'], map_results['ID_loc2']))
+
+
+    # by default we will take intersecting clusters from first run
+
+    shared = []
+
+    for k, v in shared_dict.items():
+        if 'List1' in k:
+
+            structure = v.split('_cluster')[0]
+            if structure != 'Circular':
+                shared_non_circular_counts += 1
+                #we want to copy this cluster into output folder, and remember its ID
+                from_copy = os.path.join(run1_loc, 'clusters', '{}.fna'.format(v))
+                to_copy = os.path.join(cluster_out_folder, '{}.fna'.format(v))
+                shutil.copyfile(from_copy, to_copy)
+
+                loc1_ids.append(int(v.split('_cluster_ID_')[-1].split('_')[0]))
+
+
+            else:
+
+                shared_circular_counts += 1
+
+                clusterID = int(v.split('_cluster_ID_')[-1].split('_')[0])
+
+
+                if not strict:
+                    loc1_ids.append(clusterID) #we will pull both circular clusters out at the end
+                else:
+                    # we want to copy this cluster into output folder, and remember its ID
+                    from_copy = os.path.join(run1_loc, 'clusters', '{}.fna'.format(v))
+                    to_copy = os.path.join(cluster_out_folder, '{}.fna'.format(v))
+                    shutil.copyfile(from_copy, to_copy)
+
+                    loc1_ids.append(int(v.split('_cluster_ID_')[-1].split('_')[0]))
+
+    if not strict:
+        # pull out circular clusters and concat their results sheet
+        subset_circular_list1 = results_list_1[results_list_1['Structure'] == 'Circular']
+        subset_circular_list2 = results_list_2[results_list_2['Structure'] == 'Circular']
+
+        subset_circular_list1['Original location'] = run1_loc
+        subset_circular_list2['Original location'] = run2_loc
+
+        #now let's get rid of all shared ID's from loc2, keeping only circular clusters unique to loc2
+        subset_circular_list1['Found in both RecurM runs'] = subset_circular_list1['ID'].apply(lambda x: 'Yes' if int(x) in loc1_ids else 'No')
+
+        #construct a list for loc2 ids from loc1 ids
+        loc2_ids = [cluster_id_1_to_clust_id_2[x] for x in loc1_ids]
+
+        subset_circular_list1['Found in both RecurM runs'] = subset_circular_list1['ID'].apply(lambda x: 'Yes' if int(x) in loc1_ids else 'No')
+        subset_circular_list2['Found in both RecurM runs'] = subset_circular_list2['ID'].apply(lambda x: 'Yes' if int(x) in loc2_ids else 'No')
+
+        #Keep unique loc2 circulars
+        subset_circular_list2 = subset_circular_list2[subset_circular_list2['Found in both RecurM runs'] == 'No']
+
+        final_circular = pd.concat([subset_circular_list1, subset_circular_list2])
+
+        # copy all circular clusters:
+        for k, v in shared_dict.items():
+            if 'List1' in k:
+                structure = v.split('_cluster')[0]
+                if structure == 'Circular':
+                    from_copy = os.path.join(run1_loc, 'clusters', '{}.fna'.format(v))
+                    to_copy = os.path.join(cluster_out_folder, '{}.fna'.format(v))
+                    shutil.copyfile(from_copy, to_copy)
+            elif 'List2' in k:
+                #check to make sure it's unique to 2:
+                ID = int(v.split('_cluster_ID_')[-1].split('_')[0])
+                if ID in loc2_ids:
+                    structure = v.split('_cluster')[0]
+                    if structure == 'Circular':
+                        from_copy = os.path.join(run2_loc, 'clusters', '{}.fna'.format(v))
+                        to_copy = os.path.join(cluster_out_folder, '{}.fna'.format(v))
+                        shutil.copyfile(from_copy, to_copy)
+
+    else:
+        # pull out circular clusters and concat their results sheet
+        subset_circular_list1 = results_list_1[results_list_1['Structure'] == 'Circular']
+        subset_circular_list2 = results_list_2[results_list_2['Structure'] == 'Circular']
+
+        subset_circular_list1['Original location'] = run1_loc
+        subset_circular_list2['Original location'] = run2_loc
+
+        # now let's get rid of all shared ID's from loc2, keeping only circular clusters unique to loc2
+        subset_circular_list1['Found in both RecurM runs'] = subset_circular_list1['ID'].apply(
+            lambda x: 'Yes' if int(x) in loc1_ids else 'No')
+
+        # construct a list for loc2 ids from loc1 ids
+        loc2_ids = [cluster_id_1_to_clust_id_2[x] for x in loc1_ids]
+
+        subset_circular_list1['Found in both RecurM runs'] = subset_circular_list1['ID'].apply(
+            lambda x: 'Yes' if int(x) in loc1_ids else 'No')
+        subset_circular_list2['Found in both RecurM runs'] = subset_circular_list2['ID'].apply(
+            lambda x: 'Yes' if int(x) in loc2_ids else 'No')
+
+        final_circular = pd.concat([subset_circular_list1, subset_circular_list2])
+
+    if strict:
+
+        final_circular = results_list_1[results_list_1['Structure'] == 'Circular']
+
+        final_circular = final_circular[final_circular['ID'].isin(loc1_ids)]
+        final_circular['Original location'] = run1_loc
+        final_circular['Cluster ID from 2nd RecurM Run'] = final_circular['ID'].apply(
+            lambda x: cluster_id_1_to_clust_id_2[x])
+        final_circular['Found in both RecurM runs'] = 'Yes'
+
+    final_linear = results_list_1[results_list_1['Structure'] != 'Circular']
+
+    final_linear = final_linear[final_linear['ID'].isin(loc1_ids)]
+    final_linear['Original location'] = run1_loc
+    final_linear['Cluster ID from 2nd RecurM Run'] = final_linear['ID'].apply(lambda x: cluster_id_1_to_clust_id_2[x])
+    final_linear['Found in both RecurM runs'] = 'Yes'
+
+    total_output = pd.concat([final_circular, final_linear])
+
+    total_output['Cluster ID from 2nd RecurM Run'] = total_output.apply(lambda row: cluster_id_1_to_clust_id_2[row['ID']] if row['ID'] in cluster_id_1_to_clust_id_2.keys() and row['Found in both RecurM runs'] == 'Yes' else 'None', axis=1)
+
+    return total_output

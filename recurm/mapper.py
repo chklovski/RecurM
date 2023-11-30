@@ -25,6 +25,7 @@ from recurm.defaultValues import DefaultValues
 from recurm import fileManager
 from recurm import FASTA_manager
 
+
 class Mapper():
     def __init__(self, threads):
         self.nthreads = threads
@@ -1342,3 +1343,154 @@ class WithinClusterMapper(Mapper):
 
         return cluster_information, cluster_contigs_info, leftover_contigs_info, fastANI_results[['Query', 'Ref', 'ANI']]
 
+class MergeMapping(Mapper):
+
+
+
+
+    def mapMerge(self, file1, file2, map_outdir, threads):
+
+#        mapping_input = combined_assemblies
+#        mapping_out = os.path.join(map_outdir, DefaultValues.FIRST_PASS_MAPPING_NAME)
+        # minimap2 options:
+        try:
+
+            #old cmd - check if dual is needed
+#            cmd = "minimap2 -x ava-ont -t {} {} {} --dual=yes -v1 > {}" \
+#                .format(self.nthreads, combined_contig_file, assembly_file, mapping_output)
+
+            cmd = "minimap2 -x ava-ont {} {} --dual=yes -t {} -v1 > {}" \
+                .format(file1, file2, threads, map_outdir)
+
+            logging.debug(cmd)
+            subprocess.call(cmd, shell=True)
+            logging.debug('Finished Running Minimap2')
+        except Exception as e:
+            logging.error('An error occured while running Minimap2: {}'.format(e))
+            sys.exit(1)
+
+        return map_outdir
+
+    def process_map(self, mapfile, outdir):
+
+
+
+        paf2 = pd.read_csv(mapfile, sep='\t',
+                           names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
+
+        paf2['AR'] = paf2.apply(lambda row: self.calcAR(row[2], row[7], row[11], row[10]), axis=1)
+        paf2['LR'] = paf2.apply(lambda row: self.calcLR(row[2], row[7], row[11], row[10]), axis=1)
+        paf2['ANI'] = paf2.apply(lambda row: self.calcANI(row[2], row[7], row[11], row[10]), axis=1)
+        paf2['ARshort'] = paf2.apply(lambda row: self.calcARshort(row[2], row[7], row[11], row[10]), axis=1)
+        paf2['ClustAL'] = (paf2[4] - paf2[3]) / paf2[2]  # paf.apply(lambda row: row[2] / (row[4] - row[3]), axis=1)
+        paf2['ClustAL2'] = (paf2[9] - paf2[8]) / paf2[7]  # paf.apply(lambda row: row[2] / (row[4] - row[3]), axis=1)
+        paf2 = paf2[paf2[1] != paf2[6]]
+        paf2 = paf2[paf2['ANI'] > 0.899]
+
+
+        def namer(c1, c2):
+            return ''.join(sorted([c1, c2]))
+
+        def overlap_percent(start1, end1, start2, end2):
+            """how much does the range (start1, end1) overlap with (start2, end2)"""
+            overlap = max(max((end2 - start1), 0) - max((end2 - end1), 0) - max((start2 - start1), 0), 0)
+            len1 = end1 - start1
+            len2 = end2 - start2
+            if len1 > len2:
+                shortest = len2
+            else:
+                shortest = len1
+
+            if overlap == 0:
+                return 0
+            else:
+                return (overlap / shortest) * 100
+
+        paf2['namer'] = paf2.apply(lambda row: namer(row[1], row[6]), axis=1)
+        paf2 = paf2[paf2['LR'] > 0.899]
+
+        linear_subset = paf2[paf2['AR'] > 0.899].copy()
+
+        paf2 = paf2[paf2['ClustAL2'] > 0.15]
+        paf2 = paf2[paf2['ANI'] > 0.899]
+        paf2 = paf2[paf2['LR'] > 0.899]
+        countdict = dict(paf2['namer'].value_counts())
+        paf2['namercount'] = paf2['namer'].apply(lambda x: countdict[x])
+        multiples = paf2[paf2['namercount'] > 1]
+        multiples = multiples.sort_values(by='namer')
+        real_circs = []
+
+        AR_THRESHOLD = 0.899
+
+        for group in multiples['namer'].unique():
+            subsub = multiples[multiples['namer'] == group]
+            if subsub['namercount'].values[0] == 2:
+
+                if (subsub['AR'].values[0] + subsub['AR'].values[1]) > AR_THRESHOLD:
+                    astart = subsub[3].values[0]
+                    aend = subsub[4].values[0]
+                    bstart = subsub[8].values[0]
+                    bend = subsub[9].values[0]
+                    lena = subsub[2].values[0]
+                    lenb = subsub[7].values[0]
+
+                    astart2 = subsub[3].values[1]
+                    aend2 = subsub[4].values[1]
+                    bstart2 = subsub[8].values[1]
+                    bend2 = subsub[9].values[1]
+
+                    if (lena - aend) > (lena - aend2):
+                        firstHalfA = True
+                    else:
+                        firstHalfA = False
+
+                    if (lenb - bend) > (lenb - bend2):
+                        firstHalfB = True
+                    else:
+                        firstHalfB = False
+
+                    overlap1 = overlap_percent(astart, aend, astart2, aend2)
+                    overlap2 = overlap_percent(bstart, bend, bstart2, bend2)
+
+                    if len(subsub[5].unique()) == 1:  # This means + to + or - to -
+                        # no more than 10% overlap:
+                        # TODO: check this aligns with AR to match cutoffs
+                        if overlap1 < 10 and overlap2 < 10:
+
+                            if subsub[5].values[0] == '-':
+                                if firstHalfA and firstHalfB:
+                                    real_circs.append(subsub)
+
+                                elif not firstHalfA and not firstHalfB:
+                                    real_circs.append(subsub)
+
+
+
+                            elif subsub[5].values[0] == '+':
+                                if not firstHalfA and firstHalfB:
+                                    real_circs.append(subsub)
+
+                                elif firstHalfA and not firstHalfB:
+                                    real_circs.append(subsub)
+
+
+                    elif len(subsub[5].unique()) == 2:  # This means + to -
+                        if overlap1 < 10 and overlap2 < 10:
+                            if not firstHalfA and firstHalfB:
+                                real_circs.append(subsub)
+
+                            elif firstHalfA and not firstHalfB:
+                                real_circs.append(subsub)
+
+        real_circs = pd.concat(real_circs)
+        real_circs = real_circs.drop_duplicates(subset='namer')
+
+        final = pd.concat([real_circs, linear_subset])
+
+        del final['namer']
+        del final['namercount']
+
+        final = final.sort_values(by='AR', ascending=False)
+        final = final.drop_duplicates(subset=6, keep='first')
+
+        return final

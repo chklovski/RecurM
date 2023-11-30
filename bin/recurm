@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 __author__ = "Alex Chklovski"
-__version__ = "0.2.6"
+__version__ = "0.2.7"
 __maintainer__ = "Alex Chklovski"
 __email__ = "chklovski near gmail.com"
 __status__ = "Development"
@@ -21,6 +21,7 @@ sys.path = [os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')] + s
 from recurm import clusterer
 from recurm import FASTA_manager
 from recurm import fileManager
+from recurm import mapper
 from recurm.defaultValues import DefaultValues
 
 
@@ -33,6 +34,12 @@ def generate_header():
              "\t\t |_|  \_\___|\___|\__,_|_|  |_|  |_|\n "
     return header
 
+
+def is_directory(path):
+    if os.path.isdir(path):
+        return path
+    else:
+        raise argparse.ArgumentTypeError(f"{path} is not a valid directory")
 
 if __name__ == '__main__':
 
@@ -107,11 +114,46 @@ if __name__ == '__main__':
                                    help='Collapse any shorter clusters into longer contigs (will discard integrated elements) [default: True]', default=False)
 
 
+
+    ###
+    merge_cluster_description = 'Identify common cluster from two RecurM runs of the *same* samples assembled using *different* assemblers.'
+
+    merge_cluster_parser = new_subparser(subparsers, 'merge', merge_cluster_description)
+
+    merge_cluster_arguments = merge_cluster_parser.add_argument_group('required arguments')
+
+    merge_cluster_parser.add_argument('--recurm_directories', '-i', type=is_directory, nargs=2,
+                                help="Path to two folders containing two RecurM runs",
+                                required=True)
+
+    merge_cluster_parser.add_argument('--output', '--output-directory', '-o', help="Path output to folder",
+                                required=True)
+
+    merge_cluster_arguments = merge_cluster_parser.add_argument_group('additional arguments')
+
+    merge_cluster_arguments.add_argument('--force', action='store_true',
+                                   help='overwrite output directory [default: do not overwrite]',
+                                   default=False)
+
+
+    #
+
+    merge_cluster_arguments.add_argument('--threads', '-t', type=int, metavar='num_threads',
+                                   help='number of CPUS to use [default: %i]' % num_threads, default=num_threads)
+
+
+    merge_cluster_arguments.add_argument('--strict', action='store_true',
+                                   help='Keep only circular clusters found by both RecurM runs [default: False]',
+                                   default=False)
+
+
+
     if (len(sys.argv) == 1 or sys.argv[1] == '-h' or sys.argv[1] == '--help' or sys.argv[1] == 'help'):
         print('{}'.format(generate_header()))
         print('                ...::: RecurM v' + __version__ + ' :::...''')
         print('\n  General usage:')
         print('    cluster         -> %s' % cluster_description)
+        print('    merge           -> %s' % merge_cluster_description)
         #        print('    testrun         -> %s' % testrun_description)
 
         print('\n  Use recurm <command> -h for command-specific help.\n')
@@ -129,6 +171,7 @@ if __name__ == '__main__':
 
     logging.basicConfig(level=loglevel, format='[%(asctime)s] %(levelname)s: %(message)s',
                         datefmt='%m/%d/%Y %I:%M:%S %p')
+
 
 
     if args.subparser_name == 'cluster':
@@ -246,6 +289,49 @@ if __name__ == '__main__':
 
 
         clust_process.cluster_all_vs_all(os.path.abspath(contigs_assembly_file), master_assembly, args.fast, is_chunk=False)
+
+
+    elif args.subparser_name == 'merge':
+
+        fileManager.check_empty_dir(os.path.abspath(args.output), args.force)
+
+        logging.info("Merging multiple RecurM runs and keeping common clusters.")
+        logging.info("By default, keeping all circular clusters and only common non-circular clusters.")
+        logging.info("Use the --strict command to output only common circular clusters.")
+
+        # Read in all clusters and concatenate them
+
+
+        master_file_1, master_file_2 = FASTA_manager.concatenate_clusters(args.recurm_directories[0],
+                                                                          args.recurm_directories[1],
+                                                                          args.output)
+
+        logging.info("Identifying related clusters from previous RecurM runs with {} threads.".format(args.threads))
+
+        mapfile = os.path.join(args.output, 'mapping.tsv')
+
+        merge_mapper = mapper.MergeMapping(args.threads)
+
+        logging.info(
+            'Mapping all clusters against each other to identify common clusters.')
+        mapfile = merge_mapper.mapMerge(master_file_1, master_file_2, mapfile, args.threads)
+
+        matched_clusters = merge_mapper.process_map(mapfile, args.output)
+
+        #find all shared ID's - separately for circular and non-circular
+        logging.info('Determining shared clusters...')
+
+        total_output = FASTA_manager.find_intersecting_clusters(args.recurm_directories[0],args.recurm_directories[1],
+                                                 matched_clusters, args.output, args.strict)
+
+        matched_clusters.to_csv(os.path.join(args.output, 'filtered_mapping.tsv'), sep='\t', index=False)
+
+
+
+        logging.info('Writing results to file.')
+        total_output.to_csv(os.path.join(args.output, 'results', 'cluster_information.tsv'), sep='\t', index=False)
+
+
 
 
 
