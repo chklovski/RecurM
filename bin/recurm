@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 __author__ = "Alex Chklovski"
-__version__ = "0.2.7"
+__version__ = "0.2.8"
 __maintainer__ = "Alex Chklovski"
 __email__ = "chklovski near gmail.com"
 __status__ = "Development"
@@ -111,9 +111,13 @@ if __name__ == '__main__':
                                    help='Change minimap2 heuristics options to stop chaining early, avoiding quadratic runtimes - best for very large datasets (> 1000 assemblies) [default: False]', default=False)
 
     cluster_arguments.add_argument('--collapse_against_assembly', action='store_true',
-                                   help='Collapse any shorter clusters into longer contigs (will discard integrated elements) [default: True]', default=False)
+                                   help='Recommended: Collapse any shorter clusters into longer contigs (will discard integrated elements) [default: False]', default=False)
 
+    cluster_arguments.add_argument('--keep_inversions', action='store_true',
+                                   help='Keep circular alignments representing inversions [default: False]', default=False)
 
+    cluster_arguments.add_argument('--keep_temp_files', action='store_true',
+                                   help='Keep temporary files (primarily linear/circular mapping/alignment files) [default: False]', default=False)
 
     ###
     merge_cluster_description = 'Identify common cluster from two RecurM runs of the *same* samples assembled using *different* assemblers.'
@@ -220,7 +224,7 @@ if __name__ == '__main__':
 
             clust_process = clusterer.Clusterer(args.min_contig_len, args.min_cluster_size, args.threads,
                                             os.path.abspath(os.path.dirname(entry)), args.extension, args.force, args.resume,
-                                            args.keep_related, args.collapse_against_assembly)
+                                            args.keep_related, args.collapse_against_assembly, args.keep_inversions, args.keep_temp_files)
 
             clust_process.cluster_all_vs_all(os.path.abspath(entry), master_assembly, args.fast, is_chunk=True)
 
@@ -285,7 +289,7 @@ if __name__ == '__main__':
         clust_process = clusterer.Clusterer(args.min_contig_len, args.min_cluster_size, args.threads,
                                             os.path.abspath(os.path.dirname(contigs_assembly_file)), args.extension, args.force,
                                             args.resume,
-                                            args.keep_related, args.collapse_against_assembly)
+                                            args.keep_related, args.collapse_against_assembly, args.keep_inversions, args.keep_temp_files)
 
 
         clust_process.cluster_all_vs_all(os.path.abspath(contigs_assembly_file), master_assembly, args.fast, is_chunk=False)

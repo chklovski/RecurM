@@ -169,7 +169,7 @@ class AllVsAllMapper(Mapper):
 
 
 
-    def read_hashes_and_process_alignments(self, multialign_dir, mapping_dir, hash_file, LRcutoff, ARcutoff, ANIcutoff, outfile, short_circular):
+    def read_hashes_and_process_alignments(self, multialign_dir, mapping_dir, hash_file, LRcutoff, ARcutoff, ANIcutoff, outfile, short_circular, keep_inversions):
 
 
         use_short_circular = short_circular
@@ -437,22 +437,31 @@ class AllVsAllMapper(Mapper):
 
 
                     elif len(subsub[5].unique()) == 2: # This means + to -
-                        if overlap1 < 10 and overlap2 < 10:
-                              if not firstHalfA and firstHalfB:
-                                    real_circs.append(subsub)
+                        if keep_inversions: #this is a complex *putatively* circular alignment containing an inversion - note that it's lower confidence
+                            logging.info("Including putative inversions in circular alignments.")
+                            if overlap1 < 10 and overlap2 < 10:
+                                  if not firstHalfA and firstHalfB:
+                                      #make sure alignment starts within 100 bp of end of strand
+                                      if min(astart, aend) < 101 or min(bstart, bend) < 101:
+                                          if min(astart2, aend2) < 101 or min(bstart2, bend2) < 101:
+                                                real_circs.append(subsub)
 
-                                    if short:
-                                        circular_labels.extend(('Short_Circular', 'Short_Circular'))
-                                    else:
-                                        circular_labels.extend(('Circular', 'Circular'))
 
-                              elif firstHalfA and not firstHalfB:
-                                    real_circs.append(subsub)
+                                                if short:
+                                                    circular_labels.extend(('Short_Circular', 'Short_Circular'))
+                                                else:
+                                                    circular_labels.extend(('Circular', 'Circular'))
 
-                                    if short:
-                                        circular_labels.extend(('Short_Circular', 'Short_Circular'))
-                                    else:
-                                        circular_labels.extend(('Circular', 'Circular'))
+                                  elif firstHalfA and not firstHalfB:
+                                      if min(astart, aend) < 101 or min(bstart, bend) < 101:
+                                          if min(astart2, aend2) < 101 or min(bstart2, bend2) < 101:
+                                            real_circs.append(subsub)
+
+                                            if short:
+                                                circular_labels.extend(('Short_Circular', 'Short_Circular'))
+                                            else:
+                                                circular_labels.extend(('Circular', 'Circular'))
+
 
             index += 2
 

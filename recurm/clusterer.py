@@ -17,11 +17,13 @@ from recurm import grapher
 
 class Clusterer():
     def __init__(self, mincontiglen, minclustersize, threads, out, filext, overwrite=False, resume=False,
-                 keep_related=False, collapse_against_assembly=False):
+                 keep_related=False, collapse_against_assembly=False, keep_inversions=False, keep_temp_files=False):
         self.nthreads = threads
         #self.input_list = assemblies_list
         self.keep_related = keep_related
         self.collapse_against_assembly = collapse_against_assembly
+        self.keep_inversions = keep_inversions
+        self.keep_temp_files = keep_temp_files
         self.use_short_circular = False #this needs to be fixed as currently longer contigs are used to circularise shorter contigs which is not right
         if not resume:
             #fileManager.check_empty_dir(os.path.abspath(out), overwrite)
@@ -155,7 +157,7 @@ class Clusterer():
                                                           DefaultValues.FIRST_PASS_AVA_AR_CUTOFF,
                                                           DefaultValues.FIRST_PASS_AVA_ANI_CUTOFF,
                                                           '{}/{}'.format(self.outdir, DefaultValues.CIRCULAR_ALIGNMENTS_NAME),
-                                                          self.use_short_circular)
+                                                          self.use_short_circular, self.keep_inversions)
 
         if is_chunk:
             return
@@ -254,18 +256,19 @@ class Clusterer():
 
         logging.info('Cleaning up intermediate files.')
 
-        fileManager.remove_intermediates([combined_assemblies,
-                                          '{}/{}'.format(self.outdir, DefaultValues.CIRCULAR_ALIGNMENTS_NAME),
-                                          '{}/{}'.format(self.outdir, DefaultValues.HASHING_DIR),
-                                          '{}/{}'.format(self.outdir, DefaultValues.MULTIALIGN_DIR),
-                                          '{}/{}'.format(self.outdir, DefaultValues.COLLAPSE_DIR),
-                                          '{}/{}'.format(self.outdir, DefaultValues.MAPPING_DIR),
-                                          '{}/{}'.format(self.outdir, DefaultValues.ALIGNMENT_DIR),
-                                          '{}/{}'.format(self.outdir, DefaultValues.ASSEMBLY_DEREP_FILE),
-                                          '{}/{}'.format(self.outdir, DefaultValues.COMBINED_CONTIGS_MAPPING_FILE),
-                                          '{}/{}'.format(self.outdir, DefaultValues.COMBINED_CONTIGS_FILE),
-                                          '{}/{}'.format(self.outdir, DefaultValues.EXTRACTED_CHUNK_CONTIGS_FILE),
-                                          ])
+        if not self.keep_temp_files:
+            fileManager.remove_intermediates([combined_assemblies,
+                                              '{}/{}'.format(self.outdir, DefaultValues.CIRCULAR_ALIGNMENTS_NAME),
+                                              '{}/{}'.format(self.outdir, DefaultValues.HASHING_DIR),
+                                              '{}/{}'.format(self.outdir, DefaultValues.MULTIALIGN_DIR),
+                                              '{}/{}'.format(self.outdir, DefaultValues.COLLAPSE_DIR),
+                                              '{}/{}'.format(self.outdir, DefaultValues.MAPPING_DIR),
+                                              '{}/{}'.format(self.outdir, DefaultValues.ALIGNMENT_DIR),
+                                              '{}/{}'.format(self.outdir, DefaultValues.ASSEMBLY_DEREP_FILE),
+                                              '{}/{}'.format(self.outdir, DefaultValues.COMBINED_CONTIGS_MAPPING_FILE),
+                                              '{}/{}'.format(self.outdir, DefaultValues.COMBINED_CONTIGS_FILE),
+                                              '{}/{}'.format(self.outdir, DefaultValues.EXTRACTED_CHUNK_CONTIGS_FILE),
+                                              ])
 
 
 
