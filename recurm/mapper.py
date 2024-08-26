@@ -154,6 +154,7 @@ class AllVsAllMapper(Mapper):
             if not fast:
                 cmd = "minimap2 -x ava-ont -m {} -t {} {} {} -v1 | split --additional-suffix=.paf -d --line-bytes={} - {}" \
                     .format(min_contig_len * 0.3, self.nthreads, mapping_input, mapping_input, DefaultValues.PAF_CHUNK_SIZE, mapping_out)
+                    
             else:
                 cmd = "minimap2 -k16  -Xw5 -m {} -g1000 -r1000  --max-chain-skip 500 --max-chain-iter 1000 -K 5G -I 20G -2 -t {} {} {} -v1 | split --additional-suffix=.paf -d --line-bytes={} - {}" \
                     .format(min_contig_len * 0.3, self.nthreads, mapping_input, mapping_input, DefaultValues.PAF_CHUNK_SIZE, mapping_out)
@@ -716,17 +717,20 @@ class AllVsAllMapper(Mapper):
 
             extracted_aligns = extracted_aligns[extracted_aligns['ANI'] >= DefaultValues.FIRST_PASS_AVA_ANI_CUTOFF]
 
-
-            extracted_aligns['Hash'] = extracted_aligns.apply(lambda row: self.hashsum(row[1], row[6]),
-                                                                              axis=1)
-
-            hashdict = dict(extracted_aligns['Hash'].value_counts())
-            extracted_aligns['HashCount'] = extracted_aligns['Hash'].apply(lambda x: hashdict[x])
-
-            extracted_aligns = extracted_aligns[extracted_aligns['HashCount'] > 1]
-
+            #check if we have any left
+            
             if len(extracted_aligns) > 1:
-                align_list.append(extracted_aligns)
+            
+                extracted_aligns['Hash'] = extracted_aligns.apply(lambda row: self.hashsum(row[1], row[6]),
+                                                                                  axis=1)
+
+                hashdict = dict(extracted_aligns['Hash'].value_counts())
+                extracted_aligns['HashCount'] = extracted_aligns['Hash'].apply(lambda x: hashdict[x])
+
+                extracted_aligns = extracted_aligns[extracted_aligns['HashCount'] > 1]
+
+                if len(extracted_aligns) > 1:
+                    align_list.append(extracted_aligns)
 
             queue_out.put([idx])
 

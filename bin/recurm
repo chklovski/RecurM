@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 __author__ = "Alex Chklovski"
-__version__ = "0.2.8"
+__version__ = "0.3.0"
 __maintainer__ = "Alex Chklovski"
 __email__ = "chklovski near gmail.com"
 __status__ = "Development"
@@ -25,14 +25,6 @@ from recurm import mapper
 from recurm.defaultValues import DefaultValues
 
 
-def generate_header():
-    header = "\t\t  _____                      __  __ \n " \
-             "\t\t |  __ \                    |  \/  |\n " \
-             "\t\t | |__) |___  ___ _   _ _ __| \  / |\n " \
-             "\t\t |  _  // _ \/ __| | | | '__| |\/| |\n " \
-             "\t\t | | \ \  __/ (__| |_| | |  | |  | |\n " \
-             "\t\t |_|  \_\___|\___|\__,_|_|  |_|  |_|\n "
-    return header
 
 
 def is_directory(path):
@@ -118,6 +110,9 @@ if __name__ == '__main__':
 
     cluster_arguments.add_argument('--keep_temp_files', action='store_true',
                                    help='Keep temporary files (primarily linear/circular mapping/alignment files) [default: False]', default=False)
+ 
+    cluster_arguments.add_argument('--long', action='store_true',
+                                   help='Use options appropriate for long read assemblies (Note: should be at least 50 percent of assemblies; will output imperfect clusters) [default: False, assume short reads; no imperfect clusters]', default=False)
 
     ###
     merge_cluster_description = 'Identify common cluster from two RecurM runs of the *same* samples assembled using *different* assemblers.'
@@ -139,9 +134,6 @@ if __name__ == '__main__':
                                    help='overwrite output directory [default: do not overwrite]',
                                    default=False)
 
-
-    #
-
     merge_cluster_arguments.add_argument('--threads', '-t', type=int, metavar='num_threads',
                                    help='number of CPUS to use [default: %i]' % num_threads, default=num_threads)
 
@@ -153,7 +145,6 @@ if __name__ == '__main__':
 
 
     if (len(sys.argv) == 1 or sys.argv[1] == '-h' or sys.argv[1] == '--help' or sys.argv[1] == 'help'):
-        print('{}'.format(generate_header()))
         print('                ...::: RecurM v' + __version__ + ' :::...''')
         print('\n  General usage:')
         print('    cluster         -> %s' % cluster_description)
@@ -188,10 +179,11 @@ if __name__ == '__main__':
 
         assemblies_list = fileManager.list_assembly_folder(args.assemblies_directory, args.extension)
         logging.info("Clustering contigs from {} assemblies with {} threads.".format(len(assemblies_list), args.threads))
-        if args.size_bins > 1:
-            size_bins = FASTA_manager.determine_size_cutoffs(args.threads, assemblies_list, args.min_contig_len, args.size_bins)
+        if int(args.size_bins) > 1:
+            size_bins = FASTA_manager.determine_size_cutoffs(args.threads, assemblies_list, args.min_contig_len, int(args.size_bins))
         else:
-            size_bins = []
+            size_bins = [(args.min_contig_len, 100000000)]
+            
 
         #Set up size bin folders
 
@@ -224,7 +216,7 @@ if __name__ == '__main__':
 
             clust_process = clusterer.Clusterer(args.min_contig_len, args.min_cluster_size, args.threads,
                                             os.path.abspath(os.path.dirname(entry)), args.extension, args.force, args.resume,
-                                            args.keep_related, args.collapse_against_assembly, args.keep_inversions, args.keep_temp_files)
+                                            args.keep_related, args.collapse_against_assembly, args.keep_inversions, args.keep_temp_files, args.long)
 
             clust_process.cluster_all_vs_all(os.path.abspath(entry), master_assembly, args.fast, is_chunk=True)
 
@@ -289,7 +281,7 @@ if __name__ == '__main__':
         clust_process = clusterer.Clusterer(args.min_contig_len, args.min_cluster_size, args.threads,
                                             os.path.abspath(os.path.dirname(contigs_assembly_file)), args.extension, args.force,
                                             args.resume,
-                                            args.keep_related, args.collapse_against_assembly, args.keep_inversions, args.keep_temp_files)
+                                            args.keep_related, args.collapse_against_assembly, args.keep_inversions, args.keep_temp_files, args.long)
 
 
         clust_process.cluster_all_vs_all(os.path.abspath(contigs_assembly_file), master_assembly, args.fast, is_chunk=False)

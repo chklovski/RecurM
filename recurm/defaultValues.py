@@ -29,7 +29,7 @@ class DefaultValues():
 
 
 
-    CONTIG_SIZE_BINS = 100
+    CONTIG_SIZE_BINS = 10
     DEFAULT_MIN_BIN_SIZE = 8000
 
     SIZE_BIN_NAME = 'RECURM_SIZEBIN'
@@ -51,11 +51,11 @@ class DefaultValues():
     ASSEMBLY_DEREP_CONTIG_PERCENT_LONGER = 0.25
 
     # aligns to x% of all other contigs in cluster
-    TIGHTNESS_CLUSTER_CUTOFF = 0.01
+    TIGHTNESS_CLUSTER_CUTOFF = 0.5
 
     # percent representative sequence size is allowed to deviate from mean
     # intended to filter out smeared assembly length type clusters
-    ALLOWED_SIZE_DEVIATION_WITHIN_CLUSTER = 0.99
+    ALLOWED_SIZE_DEVIATION_WITHIN_CLUSTER = 0.5
 
     SECOND_PASS_CONTIGS_AR_SHORT_CUTOFF = 0.70
 

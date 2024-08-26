@@ -17,7 +17,7 @@ from recurm import grapher
 
 class Clusterer():
     def __init__(self, mincontiglen, minclustersize, threads, out, filext, overwrite=False, resume=False,
-                 keep_related=False, collapse_against_assembly=False, keep_inversions=False, keep_temp_files=False):
+                 keep_related=False, collapse_against_assembly=False, keep_inversions=False, keep_temp_files=False, long=False):
         self.nthreads = threads
         #self.input_list = assemblies_list
         self.keep_related = keep_related
@@ -25,6 +25,7 @@ class Clusterer():
         self.keep_inversions = keep_inversions
         self.keep_temp_files = keep_temp_files
         self.use_short_circular = False #this needs to be fixed as currently longer contigs are used to circularise shorter contigs which is not right
+        self.long = long
         if not resume:
             #fileManager.check_empty_dir(os.path.abspath(out), overwrite)
             self.outdir = os.path.abspath(out)
@@ -178,7 +179,7 @@ class Clusterer():
 
         logging.info('Extracting representative contigs.')
         cluster_folder, cluster_contigs_info, leftover_contigs_info, filtered_out, x1, x2, x3, x4 = \
-            FASTA_manager.write_clusters_to_file(combined_assemblies, self.outdir, sub_graphs, cluster_information)
+            FASTA_manager.write_clusters_to_file(combined_assemblies, self.outdir, sub_graphs, cluster_information, self.long)
 
 
 
@@ -230,7 +231,13 @@ class Clusterer():
         mask = group_counts < 2
         cluster_information.loc[mask, 'Group'] = 'None'
         cluster_information.loc[mask, 'Average_ANI'] = None
+        
+        if not self.long:
+            imperfect_clusters = cluster_information[cluster_information['Structure'] == 'Imperfect']
+            cluster_contigs_info = cluster_contigs_info[~cluster_contigs_info['Cluster_ID'].isin(imperfect_clusters['ID'])]
+            cluster_information = cluster_information[cluster_information['Structure'] != 'Imperfect']
 
+        
         cluster_information.to_csv('{}/cluster_information.tsv'.format(self.results_dir), sep='\t', index=False)
         leftover_contigs_info.to_csv('{}/leftover_contigs_information.tsv'.format(self.results_dir), sep='\t', index=False)
         cluster_contigs_info.to_csv('{}/cluster_contigs_information.tsv'.format(self.results_dir), sep='\t', index=False)
@@ -240,6 +247,7 @@ class Clusterer():
                          '{}/related_clusters_ANI.tsv'.format(self.results_dir, self.results_dir))
             ani_info.to_csv('{}/related_clusters_ANI.tsv'.format(self.results_dir), sep='\t', index=False)
             #ani_matrix.to_csv('{}/related_clusters_ANI_matrix.tsv'.format(self.results_dir), sep='\t')
+
 
         logging.info('')
         logging.info(

@@ -124,7 +124,8 @@ def determine_size_cutoffs(nthreads, assemblies, minlen, NUMBER_BINS):
 
 
     logging.info('Dividing contigs into appropriate size bins with seed {}. Size distributions: {}'.format(NUMBER_BINS, final_size_bins))
-
+    
+    #for simple = final_size_bins = [(minlen, 100000000)]
     return final_size_bins
 
 def analyse_assembly_contig_size_thread(queue_in, queue_out, processed_contigsize_dfs, assemblies, minlen):
@@ -183,7 +184,7 @@ def setup_and_format_assemblies(min_len, inputfilelist, outputfolder, size_bins)
 
     supp_assembly_files = []
 
-    if len(size_bins) > 1:
+    if len(size_bins) > 0:
         for floor, ceiling in size_bins:
             size_bin_folder = os.path.join(outputfolder, '{}_FLOOR_CEILING_{}_{}'.format(DefaultValues.SIZE_BIN_NAME, floor, ceiling))
             fileManager.make_sure_path_exists(size_bin_folder)
@@ -320,7 +321,7 @@ def create_final_contigs_assembly(contigs_file, main_assembly):
 
 
 
-def write_clusters_to_file(initial_concat_assembly, outdir, graphs, infos):
+def write_clusters_to_file(initial_concat_assembly, outdir, graphs, infos, long):
     records = {}
     master_records = {}
     cluster_out_folder = os.path.join(outdir, 'clusters')
@@ -407,22 +408,48 @@ def write_clusters_to_file(initial_concat_assembly, outdir, graphs, infos):
     # remove ID's filtered out
     #infos = infos[~infos['ID'].isin(filtered_out)]
 
+
+
     infos_size = dict(zip(infos['ID'], infos['Average_Bp_Size']))
     structure = dict(zip(infos['ID'], infos['Structure']))
 
+    
 
     for name, seq, _ in readfq(open(initial_concat_assembly)):
-        if str(name) in records.keys():
-            ID = records[name]
+    
+        if long: 
+            if str(name) in records.keys():
+                ID = records[name]
+                
+                
 
-            destination = '{}/clusters/{}_cluster_ID_{}_Size_{}.fna'.format(outdir, structure[ID], ID, infos_size[ID])
-            name = name.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[-1]
-            write_fasta({name: seq}, destination)
+                destination = '{}/clusters/{}_cluster_ID_{}_Size_{}.fna'.format(outdir, structure[ID], ID, infos_size[ID])
+                name = name.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[-1]
+                write_fasta({name: seq}, destination)
+            else:
+                if name not in master_records.keys():
+                    master_records[name] = 'Not_in_cluster'
         else:
-            if name not in master_records.keys():
-                master_records[name] = 'Not_in_cluster'
+            if str(name) in records.keys():
+                ID = records[name]
+                
+                if structure[ID] != 'Imperfect':
+
+                    destination = '{}/clusters/{}_cluster_ID_{}_Size_{}.fna'.format(outdir, structure[ID], ID, infos_size[ID])
+                    name = name.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[-1]
+                    write_fasta({name: seq}, destination)
+                else:
+                    if name not in master_records.keys():
+                        master_records[name] = 'Not_in_cluster'
+        
+        
 
         # restore original contig
+    
+    # if not 'long', remove imperfects
+    if not long:
+        infos = infos[infos['Structure'] != 'Imperfect']
+        
     df = pd.DataFrame(data=master_records.items(), columns=['ContigName', 'Cluster_ID'])
 
     df['Sample'] = df['ContigName'].apply(lambda x: x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0])
