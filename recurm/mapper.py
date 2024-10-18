@@ -1151,10 +1151,12 @@ class WithinClusterMapper(Mapper):
                 #may have been removed
                 continue
         logging.info('Removed an additional {} clusters based on tightness and mean cutoffs.'.format(len(to_remove)))
+        
+        
 
         #update info
         cluster_information = cluster_information[~cluster_information['ID'].isin(filteredout)]
-        new_remove_contigs = cluster_contigs_info['Cluster_ID'].isin(filteredout).copy()
+        new_remove_contigs = cluster_contigs_info[cluster_contigs_info['Cluster_ID'].isin(filteredout)].copy()
         cluster_contigs_info = cluster_contigs_info[~cluster_contigs_info['Cluster_ID'].isin(filteredout)]
         leftover_contigs_info = pd.concat([leftover_contigs_info, new_remove_contigs])
 

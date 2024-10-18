@@ -92,12 +92,16 @@ def determine_size_cutoffs(nthreads, assemblies, minlen, NUMBER_BINS):
     final_size_bins = []
 
     prevtop = 0
+    
+    minimum_bin_size = DefaultValues.DEFAULT_MIN_BIN_SIZE
+    if minlen > minimum_bin_size:
+        minimum_bin_size = int(minlen ** 1.05) #reasonable first default increase
 
     for idx, size in enumerate(top_sizes):
         # first chunk
         if idx == 0:
-            final_size_bins.append((minlen, DefaultValues.DEFAULT_MIN_BIN_SIZE))
-            prevtop = DefaultValues.DEFAULT_MIN_BIN_SIZE
+            final_size_bins.append((minlen, minimum_bin_size))
+            prevtop = minimum_bin_size
 
         else:
             # get previous top size
@@ -122,6 +126,8 @@ def determine_size_cutoffs(nthreads, assemblies, minlen, NUMBER_BINS):
                 final_size_bins.append((prevsize, size))
                 prevtop = size
 
+    # Convert np.int64 to regular int
+    final_size_bins = [(int(x), int(y)) for x, y in final_size_bins]
 
     logging.info('Dividing contigs into appropriate size bins with seed {}. Size distributions: {}'.format(NUMBER_BINS, final_size_bins))
     
@@ -441,6 +447,11 @@ def write_clusters_to_file(initial_concat_assembly, outdir, graphs, infos, long)
                 else:
                     if name not in master_records.keys():
                         master_records[name] = 'Not_in_cluster'
+                        
+            else:
+                if name not in master_records.keys():
+                    master_records[name] = 'Not_in_cluster'
+        
         
         
 

@@ -180,6 +180,7 @@ class Clusterer():
         logging.info('Extracting representative contigs.')
         cluster_folder, cluster_contigs_info, leftover_contigs_info, filtered_out, x1, x2, x3, x4 = \
             FASTA_manager.write_clusters_to_file(combined_assemblies, self.outdir, sub_graphs, cluster_information, self.long)
+            
 
 
 
@@ -194,6 +195,7 @@ class Clusterer():
                                                       self.outdir,
                                                       cluster_information, cluster_contigs_info, leftover_contigs_info,
                                                       self.keep_related, filtered_out)
+                                                      
 
 
         if self.collapse_against_assembly:

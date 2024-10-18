@@ -5,7 +5,7 @@ channels:
   - defaults
 dependencies:
   - python>=3.6
-  - minimap2
+  - minimap2>=2.28-r1209
   - numpy
   - pandas
   - scipy
