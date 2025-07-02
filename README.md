@@ -39,6 +39,12 @@ You can run recurm from the folder:
 RecurM/bin/recurm -h
 ```
 
+Or install recurm by navigating to the RecurM folder and executing: 
+
+```
+python setup.py install
+```
+
 ## Basic workflow
 
 The basic workflow is to run the RecurM clustering algorithm on a set of metagenomic assemblies (or MAGs). To do this, you can run: 
