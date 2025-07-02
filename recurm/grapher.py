@@ -113,10 +113,15 @@ class ClusterGraph():
 
         return G, all_alignments
 
-    def retrieve_disconnected_subgraphs(self, graph, min_cluster_size, all_alignments, outdir):
+    def retrieve_disconnected_subgraphs(self, graph, min_cluster_size, all_alignments, outdir, noprune=False):
+
         initial_subgraphs = (list(graph.subgraph(c) for c in nx.connected_components(graph)))
 
-        sub_graphs = self.prune_graph(initial_subgraphs, min_cluster_size)
+        if not noprune:
+            sub_graphs = self.prune_graph(initial_subgraphs, min_cluster_size)
+        else:
+            logging.info('Skipping graph pruning due to --noprune flag.')
+            sub_graphs = initial_subgraphs
 
         logging.info(f'Min cluster size: {min_cluster_size}')
 

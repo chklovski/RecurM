@@ -30,7 +30,6 @@ class Mapper():
     def __init__(self, threads):
         self.nthreads = threads
         self.__check_for_minimap2()
-        self.__check_for_fastANI()
 
     def __check_for_minimap2(self):
         # Assume that a successful minimap2 -h returns 0 and anything
@@ -41,14 +40,6 @@ class Mapper():
             logging.error("Make sure minimap2 is on your system path.")
             sys.exit(1)
 
-    def __check_for_fastANI(self):
-        # Assume that a successful fastANI -h returns 0 and anything
-        # else returns something non-zero
-        try:
-            subprocess.call(['fastANI', '-h'], stdout=open(os.devnull, 'w'), stderr=subprocess.STDOUT)
-        except:
-            logging.error("Make sure fastANI is on your system path.")
-            sys.exit(1)
 
     def samplify(self, a, b):
         if a.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0] == \
@@ -1050,7 +1041,7 @@ class WithinClusterMapper(Mapper):
         collapsee = []
 
         if len(paf) == 0:
-            return cluster_information, cluster_contigs_info, leftover_contigs_info, None, None
+            return cluster_information, cluster_contigs_info, leftover_contigs_info, None
 
         if not keep_related:
             if len(paf[paf['ARshort'] > ARcutoff]) > 0:
@@ -1172,191 +1163,11 @@ class WithinClusterMapper(Mapper):
         rest = rest[rest['ARshort'] > DefaultValues.SECOND_PASS_CONTIGS_AR_SHORT_CUTOFF]
 
         #we will run FASTANI on contigs that have a (reasonably) good mapping only - must pass "SECOND_PASS_CONTIGS_AR_SHORT_CUTOFF"
-
-        toanalyse = set(list(rest[1].values) + list(rest[6].values))
-        toanalyse = ["{}/{}.fna".format(cluster_folder, x.split(DefaultValues.DEFAULT_FASTA_HEADER_SEPARATOR)[0]) for x in toanalyse]
-
-        FASTANI_input = os.path.join(outdir, 'FASTANI.in')
-        FASTANI_output = os.path.join(outdir, 'FASTANI.out')
-
-        #all_cluster_files = [f for f in listdir(cluster_folder) if f.endswith('.fna')]
-        #all_cluster_files = [os.path.join(cluster_folder, x) for x in all_cluster_files]
-
-        pd.DataFrame({'Contigs': toanalyse}).to_csv(FASTANI_input, sep='\t', index=False, header=False)
-
-
-        #TODO: replace fragLen parameter with -m from main process
-
-        try:
-            cmd = "fastANI -t {} --ql {} --rl {} -o {} --fragLen 2500 --minFraction {} > /dev/null 2> /dev/null" \
-                .format(self.nthreads, FASTANI_input, FASTANI_input, FASTANI_output, DefaultValues.SECOND_PASS_CONTIGS_AR_SHORT_CUTOFF)
-
-            logging.debug(cmd)
-            subprocess.call(cmd, shell=True)
-            logging.debug('Finished Running fastANI')
-        except Exception as e:
-            logging.error('An error occured while running fastANI: {}'.format(e))
-            sys.exit(1)
-
-        os.remove(FASTANI_input)
-
-        try:
-            fastANI_results = pd.read_csv(FASTANI_output, sep='\t', names=['Query', 'Ref', 'ANI', 'BlocksMatched', 'BlocksTotal'])
-        except FileNotFoundError:
-            logging.warning('fastANI failed to produce output. Assuming there are no related clusters.')
-            return cluster_information, cluster_contigs_info, leftover_contigs_info, None
-
-        os.remove(FASTANI_output)
-
-        #remove self-matches
-        fastANI_results = fastANI_results[fastANI_results['Query'] != fastANI_results['Ref']]
-        fastANI_results['Query'] = fastANI_results['Query'].apply(lambda x: x.split('/')[-1].split('.fna')[0])
-        fastANI_results['Ref'] = fastANI_results['Ref'].apply(lambda x: x.split('/')[-1].split('.fna')[0])
-
-        #remove potentially spurious results?
-        #fastANI_results = fastANI_results[~(fastANI_results['BlocksTotal'] > 9) & (fastANI_results['BlocksMatched'] < 2)]
-
-        #from duplicate entries
-        fastANI_results['check_string'] = fastANI_results.apply(lambda row: ''.join(sorted([row['Query'], row['Ref']])),
-                                              axis=1)
-        fastANI_results = fastANI_results.drop_duplicates('check_string')
-
-        #Assume ANI is meaningless if size difference is more than 50% between two sequences
-
-        fastANI_results['Size1'] = fastANI_results['Query'].apply(lambda x: x.split('_')[-1]).astype(int)
-        fastANI_results['Size2'] = fastANI_results['Ref'].apply(lambda x: x.split('_')[-1]).astype(int)
-        fastANI_results['Keep'] = fastANI_results.apply(lambda row: 'Yes' if max(row['Size1'], row['Size2']) <= min(row['Size1'], row['Size2']) * 1.5 else 'No', axis=1)
-
-        fastANI_results = fastANI_results[fastANI_results['Keep'] == 'Yes']
-
-        del fastANI_results['Size1']
-        del fastANI_results['Size2']
-        del fastANI_results['Keep']
-
-
-        ''' Potential module to dereplicate circular clusters of similar size. Unclear if fastANI is reliable enough - not implemented for now 
         
-        START UNIMPLEMENTED MODULE
-
-        if not keep_related:
-            # Update collapsed clusters from fastANI - this will catch circular alignments not parsed through yet 
-            circular_aligns = fastANI_results[fastANI_results['ANI'] > DefaultValues.CIRCULAR_ANI_INCLUDING_CUTOFF].copy()
-            circular_aligns['Circ1'] = circular_aligns['Query'].apply(lambda x: x.split('_')[0])
-            circular_aligns['Circ2'] = circular_aligns['Ref'].apply(lambda x: x.split('_')[0])
-
-            circular_aligns = circular_aligns[(circular_aligns['Circ1'] == 'Circular') | (circular_aligns['Circ2'] == 'Circular')]
-
-            if len(circular_aligns) > 0:
-
-                collapsee = []
-                collapsed_into = []
-                direction = []
-
-                # we've generated some valid, circular alignments above threshold
-                # we can iterate through and update everything
-                def identify_shorter_longer(x, y, structure_x, structure_y):
-                    lenx = int(x.split('_Size_')[-1].split('.')[0])
-                    leny = int(y.split('_Size_')[-1].split('.')[0])
-
-                    if lenx > leny:
-                        # if we are trying to collapse a slightly shorter (up to 15%) circular into a slightly longer imperfect,
-                        # do the reverse
-
-                        if structure_x == 'Circular' and structure_y == 'Imperfect' and leny/lenx > 0.85:
-                            return x, y
-                        else:
-                            return y, x
-                    else:
-                        if structure_y == 'Circular' and structure_x == 'Imperfect' and lenx/leny > 0.85:
-                            return y, x
-                        else:
-                            return x, y
-
-                circular_aligns[['Shorter', 'Longer']] = circular_aligns.apply(lambda row: identify_shorter_longer(row['Query'], row['Ref'], row['Circ2'], row['Circ1']),
-                                                                               axis=1, result_type="expand")
-                circular_aligns.reset_index(drop=True, inplace=True)
-                for index, row in circular_aligns.iterrows():
-                    shorter = circular_aligns.at[index, 'Shorter']
-                    longer = circular_aligns.at[index, 'Longer']
-
-
-                    logging.debug('Collapsing Circular clusters based on ANI: {} --> {}'.format(shorter, longer))
-
-                    try:
-                        os.remove(os.path.join(cluster_folder, shorter + '.fna'))
-                    except FileNotFoundError:
-                        continue #we may have already removed it before this stage.
-                        #logging.error('File not found during circular ANI collapse: {}. Unable to continue.'.format(
-                        #    os.path.join(cluster_folder, shorter + '.fna')))
-                        #sys.exit(1)
-                    collapsee.append(shorter)
-                    collapsed_into.append(longer)
-                    direction.append('-->')
-
-                collapsed_log = pd.DataFrame({'Collapsee': collapsee, 'Direction': direction, 'Collapsed_Into': collapsed_into})
-                collapsed_log_file = os.path.join(outdir, DefaultValues.COLLAPSED_LOG_FILE)
-                # append to existing collapsed log file
-                collapsed_log.to_csv(collapsed_log_file, sep='\t', index=False, header=False, mode='a' )
-
-                logging.info('Found and collapsed {} related circular clusters based on ANI.'.format(len(set(collapsee))))
-
-                # update cluster information
-                remove_ids = [int(x.split('ID_')[-1].split('_')[0]) for x in collapsee]
-                new_ids = [int(x.split('ID_')[-1].split('_')[0]) for x in collapsed_into]
-
-                re_id = dict(zip(remove_ids, new_ids))
-
-                cluster_contigs_info['Cluster_ID'] = cluster_contigs_info['Cluster_ID']. \
-                    apply(lambda x: 'Collapsed into {}'.format(re_id[int(x)]) if (isinstance(x, int) and int(x) in re_id.keys()) else x)
-                cluster_information = cluster_information[~cluster_information['ID'].isin(remove_ids)]
-            del circular_aligns
-
-        END UNIMPLEMENTED MODULE
+        # fastANI not reliable, removing for now
         
-        '''
 
-        #final_fastANI_out = os.path.join(outdir, 'clusters_relatedness.tsv')
-
-        #logging.info('Information for related clusters written to: {}.'.format(final_fastANI_out))
-        #fastANI_results[['Query', 'Ref', 'ANI']].to_csv(final_fastANI_out, sep='\t', index=False)
-
-        # determine groups of ANI-related clusters and write to results
-        G = nx.from_pandas_edgelist(fastANI_results, source='Query', target='Ref', edge_attr='ANI')
-
-        # Build adjacency matrix
-        # ANI_adjacency_df = pd.DataFrame(
-        #     nx.adjacency_matrix(G, weight='ANI').todense(),
-        #     index=G.nodes,
-        #     columns=G.nodes,
-        #     dtype=float  # Compatible dtype with NaN is needed
-        # )
-        # # Overwrite the values on the diagonal
-        #np.fill_diagonal(ANI_adjacency_df.values, np.NaN)
-
-        ANI_defined_groups = (list(G.subgraph(c) for c in nx.connected_components(G)))
-
-        group_dict = {}
-        average_ANI_dict = {}
-
-        for idx, group in enumerate(ANI_defined_groups):
-            total_ANI = 0
-            num_edges = 0
-            for entry in list(group):
-                id = int(entry.split('ID_')[-1].split('_')[0])
-                group_dict[id] = idx
-            for (node1, node2, data) in group.edges(data=True):
-                total_ANI += data['ANI']
-                num_edges += 1
-            average_ANI_dict[idx] = total_ANI / num_edges if num_edges > 0 else 0
-
-        cluster_information['Group'] = cluster_information['ID'].apply(lambda x: 'Group_{}'.format(group_dict[x]) if x in group_dict.keys() else 'None')
-        cluster_information['Average_ANI'] = cluster_information['Group'].apply(
-            lambda x: average_ANI_dict[int(x.split('_')[-1])] if x != 'None' else None)
-
-        #todo: generate output (ANI and dendrogram) for each group
-
-
-        return cluster_information, cluster_contigs_info, leftover_contigs_info, fastANI_results[['Query', 'Ref', 'ANI']]
+        return cluster_information, cluster_contigs_info, leftover_contigs_info, None
 
 class MergeMapping(Mapper):
 

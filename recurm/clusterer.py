@@ -17,7 +17,7 @@ from recurm import grapher
 
 class Clusterer():
     def __init__(self, mincontiglen, minclustersize, threads, out, filext, overwrite=False, resume=False,
-                 keep_related=False, collapse_against_assembly=False, keep_inversions=False, keep_temp_files=False, long=False):
+                 keep_related=False, collapse_against_assembly=False, keep_inversions=False, keep_temp_files=False, long=False, noprune=False):
         self.nthreads = threads
         #self.input_list = assemblies_list
         self.keep_related = keep_related
@@ -26,6 +26,7 @@ class Clusterer():
         self.keep_temp_files = keep_temp_files
         self.use_short_circular = False #this needs to be fixed as currently longer contigs are used to circularise shorter contigs which is not right
         self.long = long
+        self.noprune = noprune
         if not resume:
             #fileManager.check_empty_dir(os.path.abspath(out), overwrite)
             self.outdir = os.path.abspath(out)
@@ -175,7 +176,7 @@ class Clusterer():
                                                                   '{}/{}'.format(self.alignment_dir, DefaultValues.SECOND_PASS_NAME), circular_success)
         logging.info('Extracting disconnected subgraphs.')
         cluster_information, sub_graphs = \
-            graph_process.retrieve_disconnected_subgraphs(master_graph, self.clustersize, alignments_file, self.outdir)
+            graph_process.retrieve_disconnected_subgraphs(master_graph, self.clustersize, alignments_file, self.outdir, self.noprune)
 
         logging.info('Extracting representative contigs.')
         cluster_folder, cluster_contigs_info, leftover_contigs_info, filtered_out, x1, x2, x3, x4 = \
@@ -228,11 +229,13 @@ class Clusterer():
         ''' DEBUGGING PURPOSES END'''
 
         #we may have removed some members of ANI groups, they should no longer be groups:
+            
+        # Do not use fastANI as it is not reliable
 
-        group_counts = cluster_information.groupby('Group')['ID'].transform('nunique')
-        mask = group_counts < 2
-        cluster_information.loc[mask, 'Group'] = 'None'
-        cluster_information.loc[mask, 'Average_ANI'] = None
+        #group_counts = cluster_information.groupby('Group')['ID'].transform('nunique')
+        #mask = group_counts < 2
+        #cluster_information.loc[mask, 'Group'] = 'None'
+        #cluster_information.loc[mask, 'Average_ANI'] = None
         
         if not self.long:
             imperfect_clusters = cluster_information[cluster_information['Structure'] == 'Imperfect']

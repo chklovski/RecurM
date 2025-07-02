@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 __author__ = "Alex Chklovski"
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 __maintainer__ = "Alex Chklovski"
 __email__ = "chklovski near gmail.com"
 __status__ = "Development"
@@ -113,6 +113,8 @@ if __name__ == '__main__':
  
     cluster_arguments.add_argument('--long', action='store_true',
                                    help='Use options appropriate for long read assemblies (Note: should be at least 50 percent of assemblies; will output imperfect clusters) [default: False, assume short reads; no imperfect clusters]', default=False)
+    cluster_arguments.add_argument('--noprune', action='store_true',
+                                   help='Do not prune complex subgraphs [default: False, pruning is enabled]', default=False)
 
     ###
     merge_cluster_description = 'Identify common cluster from two RecurM runs of the *same* samples assembled using *different* assemblers.'
@@ -216,7 +218,7 @@ if __name__ == '__main__':
 
             clust_process = clusterer.Clusterer(args.min_contig_len, args.min_cluster_size, args.threads,
                                             os.path.abspath(os.path.dirname(entry)), args.extension, args.force, args.resume,
-                                            args.keep_related, args.collapse_against_assembly, args.keep_inversions, args.keep_temp_files, args.long)
+                                            args.keep_related, args.collapse_against_assembly, args.keep_inversions, args.keep_temp_files, args.long, args.noprune)
 
             clust_process.cluster_all_vs_all(os.path.abspath(entry), master_assembly, args.fast, is_chunk=True)
 
@@ -281,7 +283,7 @@ if __name__ == '__main__':
         clust_process = clusterer.Clusterer(args.min_contig_len, args.min_cluster_size, args.threads,
                                             os.path.abspath(os.path.dirname(contigs_assembly_file)), args.extension, args.force,
                                             args.resume,
-                                            args.keep_related, args.collapse_against_assembly, args.keep_inversions, args.keep_temp_files, args.long)
+                                            args.keep_related, args.collapse_against_assembly, args.keep_inversions, args.keep_temp_files, args.long, args.noprune)
 
 
         clust_process.cluster_all_vs_all(os.path.abspath(contigs_assembly_file), master_assembly, args.fast, is_chunk=False)
